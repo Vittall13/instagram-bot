@@ -2,6 +2,7 @@
 env/
 venv/
 .env
+node_modules/
 
 # Кэш Python
 __pycache__/
