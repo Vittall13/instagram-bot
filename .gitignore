@@ -1,0 +1,20 @@
+# Виртуальное окружение
+env/
+venv/
+.env
+
+# Кэш Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Конфигурация IDE
+.vscode/
+.idea/
+
+# Логи и БД
+*.log
+*.sqlite3
+
+# Остальное
+.DS_Store
