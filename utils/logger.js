@@ -57,6 +57,22 @@ class SafeLogger {
         }
     }
     
+    async writeToFile(level, timestamp, message, data) {
+        try {
+            const logDir = path.join(__dirname, '..', 'logs');
+            await fs.mkdir(logDir, { recursive: true });
+            const file = path.join(logDir, `${new Date().toISOString().split('T')[0]}.log`);
+            let line = `[${timestamp}] ${level}: ${message}`;
+            if (data && level === 'DEBUG') {
+                line += ` ${JSON.stringify(data)}`;
+            }
+            line += '\n';
+            await fs.appendFile(file, line, 'utf8');
+        } catch (error) {
+            // Игнорируем ошибки файлового логирования
+        }
+    }
+    
     sanitizeMessage(message) {
         // Удаляем потенциально чувствительные данные
         return message
