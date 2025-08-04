@@ -297,36 +297,76 @@ class InstagramBot {
 
       // ДОБАВИТЬ СЮДА ДИАГНОСТИКУ:
       try {
-      // Парсим комментарии для анализа
-      const parsedComments = await commentParser.parseCommentsFromPost(this.page);
-      const styleAnalysis = commentParser.analyzeCommentStyle(parsedComments);
+          // ========== ИНТЕГРИРОВАННАЯ ЛОГИКА ИЗ ОСНОВНОГО ПРОЕКТА ==========
+          // Этап 1: Парсинг комментариев для анализа
+          logger.info(' Собираем последние комментарии для анализа...');
+          const parsedComments = await commentParser.parseCommentsFromPost(this.page);
+          const styleAnalysis = commentParser.analyzeCommentStyle(parsedComments);
 
-      // Проверяем нужно ли пополнить буфер
-      if (await commentBuffer.needsRefill()) {
-          logger.info('🔄 Пополняем буфер комментариями...');
+          // Этап 2: Обеспечиваем готовность буфера (блокирующая операция при первом запуске)
+          await commentBuffer.ensureBufferReady(parsedComments, styleAnalysis);
+
+          // Этап 3: Получаем комментарий из буфера с проверкой схожести
+          let selectedComment = await commentBuffer.getNextComment();
+
+          // Этап 4: Fallback если буфер пуст
+          if (!selectedComment) {
+              logger.warning(' Буфер пуст! Пытаемся пополнить с текущими данными...');
+              
+              // Пытаемся экстренно пополнить буфер
+              const commentGenerator = require('./services/comment-generator.js');
+              const emergencyComments = await commentGenerator.generateBatchComments(parsedComments);
+              
+              if (emergencyComments && emergencyComments.length > 0) {
+                  await commentBuffer.addBatchComments(emergencyComments);
+                  selectedComment = await commentBuffer.getNextComment();
+              }
+              
+              // Если все еще пуст - используем fallback
+              if (!selectedComment) {
+                  logger.warning(' Экстренное пополнение не помогло. Используем fallback комментарий.');
+                  selectedComment = commentGenerator.generateSingleComment(parsedComments);
+              }
+          }
+
+          // Этап 5: Проверка и подготовка комментария
+          if (!selectedComment || selectedComment.length < 10) {
+              logger.warning(' Полученный комментарий некорректен. Используем fallback.');
+              const commentGenerator = require('./services/comment-generator.js');
+              selectedComment = commentGenerator.generateSingleComment(parsedComments);
+          }
+
+          // Этап 6: Ввод сгенерированного комментария
+          logger.info(' Вводим умный сгенерированный комментарий...');
+          logger.info(` Комментарий: "${selectedComment.substring(0, 50)}..."`);
           
-          // Генерируем несколько комментариев
-          const newComments = commentGenerator.generateMultipleComments(5, null, parsedComments, styleAnalysis);
-          await commentBuffer.addComments(newComments);
+          // Очищаем поле и вводим новый комментарий
+          await this.page.keyboard.press('Control+a');
+          await this.page.keyboard.press('Delete');
+          await this.page.keyboard.type(selectedComment);
+
+          // Этап 7: Фоновое пополнение буфера если нужно
+          if (await commentBuffer.needsRefill()) {
+              logger.info(' Запускаем фоновое пополнение буфера...');
+              // Не ждем завершения - пусть работает в фоне
+              commentBuffer.refillBufferBackground(parsedComments, styleAnalysis).catch(error => {
+                  logger.error('❌ Ошибка фонового пополнения:', error.message);
+              });
+          }
+
+      } catch (integrationError) {
+          logger.error('❌ Ошибка в интегрированной системе комментариев:', integrationError.message);
+          logger.debug('📋 Детали ошибки:', integrationError.stack);
+          
+          // Fallback к простому комментарию
+          logger.info('🔄 Fallback: используем простой комментарий');
+          await this.page.keyboard.press('Control+a');
+          await this.page.keyboard.press('Delete');
+          await this.page.keyboard.type("🙂 Полностью согласен с мнением автора.");
       }
 
-      // Получаем комментарий из буфера
-      let selectedComment = await commentBuffer.getNextComment();
-      if (!selectedComment) {
-          logger.warning('⚠️ Буфер пуст, генерируем экстренный комментарий...');
-          selectedComment = commentGenerator.generateComment(null, parsedComments, styleAnalysis);
-      }
-
-      logger.info('✏️ Вводим сгенерированный комментарий...');
-      await this.page.keyboard.type(selectedComment.text);
-      } catch (error) {
-        logger.error('🔬 ПОДРОБНОСТИ:', error.stack);
-        // Fallback к старому способу
-        logger.info('🔬 FALLBACK: Используем старый способ комментирования');
-        await this.page.keyboard.type(this.config.comment);
-      }
-      
       logger.success('✅ Комментарий введён!');
+// ========== Конец блока ИНТЕГРИРОВАННАЯ ЛОГИКА ИЗ ОСНОВНОГО ПРОЕКТА ==========
       await delays.waitForClickResponse(); // Ждём отклика
 
       // ✅ Ищем кнопку "Опубликовать"
