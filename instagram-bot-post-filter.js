@@ -1,13 +1,13 @@
 const { chromium } = require('playwright');
 const fs = require('fs').promises;
 const config = require('./config/config.js');
-const logger = require('./utils/logger.js');        // ← НОВАЯ СТРОКА  v2
-const delays = require('./utils/delays.js');        // ← НОВАЯ СТРОКА  v3
-const imageAnalyzer = require('./services/image-analyzer.js');       // ← НОВАЯ СТРОКА   v4
-const BrowserManager = require('./core/browser-manager.js'); // ← НОВАЯ СТРОКА  v5
-const commentParser = require('./services/comment-parser.js'); // ← ДОБАВИТЬ ЭТУ СТРОКУ v6
-const commentGenerator = require('./services/comment-generator.js'); // ← НОВАЯ СТРОКА  v6
-const commentBuffer = require('./services/comment-buffer.js');       // ← НОВАЯ СТРОКА  v6
+const logger = require('./utils/logger.js'); 
+const delays = require('./utils/delays.js'); 
+const imageAnalyzer = require('./services/image-analyzer.js'); 
+const BrowserManager = require('./core/browser-manager.js'); 
+const commentParser = require('./services/comment-parser.js'); 
+const commentGenerator = require('./services/comment-generator.js'); 
+const commentBuffer = require('./services/comment-buffer.js');  
 
 class InstagramBot {
     constructor() {
@@ -296,42 +296,30 @@ class InstagramBot {
       await delays.waitForClickResponse(); // Ждём отклика на клик
 
       // ДОБАВИТЬ СЮДА ДИАГНОСТИКУ:
-      logger.info('🔬 ТОЧКА 1: После клика по полю');
       try {
       // Парсим комментарии для анализа
-      logger.info('🔬 ТОЧКА 2: Начинаем парсинг комментариев');
       const parsedComments = await commentParser.parseCommentsFromPost(this.page);
-      logger.info('🔬 ТОЧКА 3: Парсинг завершен успешно');
       const styleAnalysis = commentParser.analyzeCommentStyle(parsedComments);
-      logger.info('🔬 ТОЧКА 4: Анализ стиля завершен');
 
       // Проверяем нужно ли пополнить буфер
-      logger.info('🔬 ТОЧКА 5: Проверяем буфер');
       if (await commentBuffer.needsRefill()) {
-          logger.info('🔬 ТОЧКА 6: Пополняем буфер');
           logger.info('🔄 Пополняем буфер комментариями...');
           
           // Генерируем несколько комментариев
           const newComments = commentGenerator.generateMultipleComments(5, null, parsedComments, styleAnalysis);
-          logger.info('🔬 ТОЧКА 7: Комментарии сгенерированы');
           await commentBuffer.addComments(newComments);
-          logger.info('🔬 ТОЧКА 8: Комментарии добавлены в буфер');
       }
 
       // Получаем комментарий из буфера
-      logger.info('🔬 ТОЧКА 9: Получаем комментарий из буфера');
       let selectedComment = await commentBuffer.getNextComment();
       if (!selectedComment) {
-          logger.info('🔬 ТОЧКА 10: Генерируем экстренный комментарий');
           logger.warning('⚠️ Буфер пуст, генерируем экстренный комментарий...');
           selectedComment = commentGenerator.generateComment(null, parsedComments, styleAnalysis);
       }
 
-      logger.info('🔬 ТОЧКА 11: Готовы к вводу комментария');
       logger.info('✏️ Вводим сгенерированный комментарий...');
       await this.page.keyboard.type(selectedComment.text);
       } catch (error) {
-        logger.error('🔬 ОШИБКА В НОВЫХ МОДУЛЯХ:', error.message);
         logger.error('🔬 ПОДРОБНОСТИ:', error.stack);
         // Fallback к старому способу
         logger.info('🔬 FALLBACK: Используем старый способ комментирования');
