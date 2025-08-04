@@ -50,7 +50,15 @@ module.exports = {
         enableFileLogging: process.env.ENABLE_FILE_LOGGING === 'true',
         productionMode: process.env.NODE_ENV === 'production'
     },
-    
+
+    // Этап интеграции kimi-k2 для генерации комментария:
+    openai: {
+        apiKey: process.env.OPENROUTER_API_KEY,
+        model: process.env.OPENAI_MODEL || 'moonshotai/kimi-k2:free',
+        maxRetries: parseInt(process.env.MAX_GENERATION_ATTEMPTS) || 5,
+        similarity: parseInt(process.env.SIMILARITY_CONST) || 50
+    },
+
     // Добавить в конец:
     selectors: selectors
 };
