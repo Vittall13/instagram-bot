@@ -1,0 +1,49 @@
+{
+  "comments": [
+    {
+      "text": "Очень правильные слова. Спасибо за такой важный пост.",
+      "source": "template",
+      "confidence": 0.8,
+      "uniqueness": 1,
+      "addedAt": "2025-08-04T10:15:05.514Z",
+      "used": true,
+      "usedAt": "2025-08-04T10:15:05.517Z"
+    },
+    {
+      "text": "Именно эти мысли нужно доносить до людей. Молодец!",
+      "source": "template",
+      "confidence": 0.8,
+      "uniqueness": 1,
+      "addedAt": "2025-08-04T10:15:05.514Z",
+      "used": true,
+      "usedAt": "2025-08-04T10:25:56.403Z"
+    },
+    {
+      "text": "Такие слова вдохновляют и дают силы. Спасибо!",
+      "source": "template",
+      "confidence": 0.8,
+      "uniqueness": 1,
+      "addedAt": "2025-08-04T10:15:05.514Z",
+      "used": true,
+      "usedAt": "2025-08-04T11:48:46.274Z"
+    },
+    {
+      "text": "Отличная позиция! Полностью разделяю эти взгляды.",
+      "source": "template",
+      "confidence": 0.8,
+      "uniqueness": 1,
+      "addedAt": "2025-08-04T10:15:05.514Z",
+      "used": false
+    },
+    {
+      "text": "Очень важные слова в нужное время. Респект!",
+      "source": "template",
+      "confidence": 0.8,
+      "uniqueness": 1,
+      "addedAt": "2025-08-04T10:15:05.514Z",
+      "used": false
+    }
+  ],
+  "lastUpdated": "2025-08-04T11:48:46.274Z",
+  "version": "1.0"
+}
