@@ -5,10 +5,11 @@ class SafeLogger {
     constructor() {
         this.levels = {
             SILENT: 0,
-            ERROR: 1, 
-            WARNING: 2,
-            INFO: 3,
-            DEBUG: 4
+            SUCCESS: 1,
+            ERROR: 2, 
+            WARNING: 3,
+            INFO: 4,
+            DEBUG: 5
         };
         
         this.currentLevel = this.getLevelFromEnv();
