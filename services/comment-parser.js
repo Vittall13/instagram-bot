@@ -19,6 +19,8 @@ class CommentParser {
                 /instagram\.com/i        // Содержит ссылки
             ]
         };
+        this.lastFoundCommentsCount = 0; // Отслеживание количества найденных комментариев
+//        this.usedStrategies = [];      // Не зная зачем.????
     }
 
     /**
@@ -37,10 +39,7 @@ class CommentParser {
     }
     }
 
-    /**
-     * ИСПРАВЛЕННЫЙ метод парсинга разными стратегиями
-     */
-    async tryMultipleParsingStrategies(page) {
+    async tryMultipleParsingStrategies(page, targetCount = 20) {
     const strategies = [
         { name: 'current_pattern', selector: 'div._ap3a span[dir="auto"]' },
         { name: 'structural', selector: 'article div div span[dir="auto"]' },
@@ -51,81 +50,93 @@ class CommentParser {
     
     for (const strategy of strategies) {
         try {
-        logger.info(`🎯 Тестируем стратегию "${strategy.name}": ${strategy.selector}`);
-        
-        const elements = await page.$$(strategy.selector);
-        logger.info(`   Найдено ${elements.length} элементов`);
-        
-        if (elements.length > 0) {
-            // ПРАВИЛЬНОЕ извлечение текста из элементов
-            const comments = [];
+            logger.info(`🎯 Стратегия "${strategy.name}": ${strategy.selector} (цель: ${targetCount})`);
             
-            for (const element of elements) {
-            try {
-                const text = await element.textContent();
-                if (text && text.trim().length > 10) {
-                comments.push(text.trim());
+            const elements = await page.$$(strategy.selector);
+            logger.info(`   Найдено ${elements.length} элементов`);
+            
+            if (elements.length > 0) {
+                // ДИНАМИЧЕСКОЕ ИЗВЛЕЧЕНИЕ - берем столько сколько нужно
+                const comments = [];
+                const maxElements = Math.min(elements.length, targetCount + 5); // +5 запас на фильтрацию
+                
+                for (let i = 0; i < maxElements; i++) {
+                    try {
+                        const text = await elements[i].textContent();
+                        if (text && text.trim().length > 10) {
+                            comments.push(text.trim());
+                            
+                            // Останавливаемся когда достигли цели
+                            if (comments.length >= targetCount) break;
+                        }
+                    } catch (error) {
+                        continue;
+                    }
                 }
-            } catch (error) {
-                continue;
-            }
+                
+                logger.info(`   Извлечено ${comments.length} текстовых комментариев`);
+                
+                if (comments.length >= Math.min(targetCount * 0.7, 10)) {
+                    logger.success(`✅ Стратегия "${strategy.name}" успешна!`);
+                    this.usedStrategies.push(strategy.name);
+                    return comments;
+                }
             }
             
-            logger.info(`   Извлечено ${comments.length} текстовых комментариев`);
-            
-            if (comments.length >= 5) {
-            logger.success(`✅ Стратегия "${strategy.name}" успешна!`);
-            this.usedStrategies.push(strategy.name);
-            return comments;
-            }
-        }
-        
         } catch (error) {
-        logger.debug(`❌ Стратегия "${strategy.name}" ошибка: ${error.message}`);
-        continue;
+            logger.debug(`❌ Стратегия "${strategy.name}" ошибка: ${error.message}`);
+            continue;
         }
     }
     
-    logger.warning('⚠️ Все стратегии не дали результата');
+    logger.warning('⚠️ Все стратегии не дали нужного результата');
     return [];
-    }
-
+}
 
     /**
      * УПРОЩЕННАЯ АДАПТИВНАЯ СИСТЕМА v2.1
      */
     async parseCommentsFromPost(page) {
         try {
-            logger.info('📖 Запуск упрощённого адаптивного парсинга...');
-
-            // ДИАГНОСТИЧЕСКАЯ СТРОКА
+            logger.info('📖 Запуск динамического адаптивного парсинга...');
             logger.info('🔬 Начинаем парсинг с диагностикой...');
-                
+            
             // Подготовка страницы
             await this.preparePageForParsing(page);
             
-            // Попытка парсинга разными стратегиями
-            let comments = await this.tryMultipleParsingStrategies(page);
+            // КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: вычисляем цель парсинга ЗАРАНЕЕ
+            const excludeCount = this.getExcludeCount();
+            const targetUsefulComments = 20; // Сколько хотим получить для анализа
+            const totalToParse = targetUsefulComments + excludeCount;
             
-            // Исключаем первые N комментариев (прогрессивно)
-            comments = this.filterCommentsByPosition(comments);
+            logger.info(`🎯 Цель: ${targetUsefulComments} полезных комментариев`);
+            logger.info(`📊 Будем парсить ${totalToParse} комментариев (${targetUsefulComments} + ${excludeCount} для исключения)`);
+            
+            // Попытка парсинга с динамической целью
+            let comments = await this.tryMultipleParsingStrategies(page, totalToParse);
+            logger.info(`🔍 После tryMultipleParsingStrategies: ${comments.length} комментариев`);
+            
+            // Исключаем первые N комментариев (теперь без защиты от переисключения!)
+            comments = this.filterCommentsByPosition(comments, excludeCount);
+            logger.info(`🎯 После filterCommentsByPosition: ${comments.length} комментариев`);
             
             // Отбрасываем служебные сообщения
             comments = this.filterServiceMessages(comments);
+            logger.info(`🧹 После filterServiceMessages: ${comments.length} комментариев`);
             
-            logger.analysis('УПРОЩЕННЫЙ АДАПТИВНЫЙ ПАРСИНГ', {
+            logger.analysis('ДИНАМИЧЕСКИЙ АДАПТИВНЫЙ ПАРСИНГ', {
+                'Цель парсинга': totalToParse,
                 'Найдено комментариев': comments.length,
-                'Исключено первых': this.getExcludeCount(),
+                'Исключено первых': excludeCount,
                 'Стратегий использовано': this.usedStrategies.length
             });
             
-            return comments.slice(0, this.config.maxComments || 20);
+            return comments.slice(0, 20); // Возвращаем максимум 20 для анализа
             
         } catch (error) {
-        // Вывод полной ошибки для диагностики
-        console.error('❌ DETECTED parseCommentsFromPost ERROR:', error);
-        logger.error('❌ Ошибка упрощённого парсинга:', error.message);
-        return [];
+            console.error('❌ DETECTED parseCommentsFromPost ERROR:', error);
+            logger.error('❌ Ошибка динамического парсинга:', error.message);
+            return [];
         }
     }
 
@@ -316,10 +327,10 @@ class CommentParser {
             });
             await page.waitForTimeout(2000);
             
-            // Сохраняем HTML страницы для анализа
-            const html = await page.content();
-            await require('fs').promises.writeFile('instagram-structure.html', html);
-            logger.info('📄 HTML структура сохранена в instagram-structure.html');
+            // // Сохраняем HTML страницы для анализа
+            // const html = await page.content();
+            // await require('fs').promises.writeFile('instagram-structure.html', html);
+            // logger.info('📄 HTML структура сохранена в instagram-structure.html');
             
             // Анализируем количество элементов
             const allSpans = await page.$$eval('span', spans => spans.length);
@@ -393,15 +404,20 @@ class CommentParser {
             logger.error('❌ Ошибка диагностики HTML структуры:', error.message);
             return [];
         }
-    }
-
+    }   
+    
     // Прогрессивное исключение собственных комментариев
-    filterCommentsByPosition(comments) {
-        const excludeCount = this.getExcludeCount();
-        logger.info(`🎯 Исключаем первые ${excludeCount} комментариев`);
+    filterCommentsByPosition(comments, excludeCount = null) {
+        if (excludeCount === null) {
+            excludeCount = this.getExcludeCount();
+        }
+        
+        logger.info(`🎯 Исключаем первые ${excludeCount} комментариев из ${comments.length}`);
+        
+        // ПРОСТАЯ ЛОГИКА БЕЗ ЗАЩИТЫ - теперь она не нужна!
         return comments.slice(excludeCount);
     }
-
+    
     // Рассчитывает количество комментариев для исключения
     getExcludeCount() {
         const fs = require('fs');
@@ -421,9 +437,14 @@ class CommentParser {
             logger.info(`🕐 Установлено время старта: ${startOfDay.toLocaleString()}`);
         }
         const hoursWorked = Math.floor((Date.now() - startOfDay.getTime()) / (1000 * 60 * 60));
-        let excludeCount = 5 + hoursWorked * 3;
-        excludeCount = Math.min(excludeCount, 50);
-        logger.debug(`⏰ Исключаем ${excludeCount} комментариев (работаем ${hoursWorked} ч)`);
+        
+        // НОВАЯ ЛОГИКА: начинаем с 3, добавляем по 3 каждый час
+        let excludeCount = 3 + hoursWorked * 3;
+        
+        // Разумное ограничение - максимум 30 комментариев для исключения
+        excludeCount = Math.min(excludeCount, 30);
+        
+        logger.debug(`⏰ Нужно исключить ${excludeCount} комментариев (работаем ${hoursWorked} ч)`);
         return excludeCount;
     }
 
