@@ -29,29 +29,29 @@ async init() {
         const profileUrl = this.config.targetProfile || this.config.profile?.username;
         
         if (!profileUrl) {
-            console.error('❌ Конфигурация не найдена!');
-            console.error('📋 Проверьте файл config/config.json');
-            console.error('📋 Должно содержать: "targetProfile": "https://www.instagram.com/username/"');
+            logger.error('❌ Конфигурация не найдена!');
+            logger.error('📋 Проверьте файл config/config.json');
+            logger.error('📋 Должно содержать: "targetProfile": "https://www.instagram.com/username/"');
             throw new Error('Не указан профиль для мониторинга');
         }
         
-        console.log(`🎯 Целевой профиль: ${profileUrl}`);
+        logger.info(`🎯 Целевой профиль: ${profileUrl}`);
         
         // Загружаем рабочие часы
         const startHour = parseInt(process.env.WORKING_HOURS_START) || this.config.workingHours?.[0] || 9;
         const endHour = parseInt(process.env.WORKING_HOURS_END) || this.config.workingHours?.[1] || 18;
-        console.log(`⏰ Рабочие часы: ${startHour}:00 - ${endHour}:00`);
+        logger.info(`⏰ Рабочие часы: ${startHour}:00 - ${endHour}:00`);
         
         // Инициализация сервисов
         this.initializeServices();
         
-        console.log('✅ Инициализация завершена');
-        console.log('🚀 Бот готов к постоянной работе');
+        logger.success('✅ Инициализация завершена');
+        logger.info('🚀 Бот готов к постоянной работе');
         
         return true;
         
     } catch (error) {
-        console.error('❌ Ошибка инициализации:', error.message);
+        logger.error('❌ Ошибка инициализации', { message: error.message });
         return false;
     }
 }
@@ -67,14 +67,14 @@ async init() {
 async login() {
     try {
         // === РАСШИРЕННАЯ ДИАГНОСТИКА АВТОРИЗАЦИИ ===
-        console.log('🔍 === ДИАГНОСТИКА АВТОРИЗАЦИИ ===');
-        console.log('🔍 BrowserManager.loadSession:', typeof this.browserManager.loadSession);
-        console.log('🔍 BrowserManager.saveSession:', typeof this.browserManager.saveSession);
+        logger.debug('🔍 === ДИАГНОСТИКА АВТОРИЗАЦИИ ===');
+        logger.debug('🔍 BrowserManager.loadSession:', typeof this.browserManager.loadSession);
+        logger.debug('🔍 BrowserManager.saveSession:', typeof this.browserManager.saveSession);
         
         // Пробуем загрузить сессию с детальным логированием
-        console.log('🔍 Попытка загрузки сессии...');
+        logger.debug('🔍 Попытка загрузки сессии...');
         const sessionLoaded = await this.browserManager.loadSession();
-        console.log('🔍 Результат загрузки сессии:', sessionLoaded);
+        logger.debug('🔍 Результат загрузки сессии:', sessionLoaded);
         
         // Остальная логика остается без изменений...
         logger.info('🔐 Переходим на Instagram...');
@@ -93,15 +93,15 @@ async login() {
         return true;
       } catch {
         // Сессия не сработала - детальная диагностика
-        console.log('⚠️ Сохраненная сессия недействительна');
-        console.log('🔍 Проверяем причины...');
+        logger.warning('⚠️ Сохраненная сессия недействительна');
+        logger.debug('🔍 Проверяем причины...');
         
         // Проверяем доступность учетных данных из .env
         const hasEnvCredentials = process.env.INSTAGRAM_USERNAME && process.env.INSTAGRAM_PASSWORD;
-        console.log('🔍 Учетные данные в .env:', hasEnvCredentials ? 'найдены' : 'отсутствуют');
+        logger.debug('🔍 Учетные данные в .env:', hasEnvCredentials ? 'найдены' : 'отсутствуют');
         
         if (hasEnvCredentials) {
-            console.log('🔄 Попытка автоматической авторизации через .env...');
+            logger.info('🔄 Попытка автоматической авторизации через .env...');
             // Здесь можно добавить автоматический вход через учетные данные
             // НО: только если вы согласитесь на этот механизм
         }
@@ -502,56 +502,56 @@ async login() {
       let successCount = 0;
       let errorCount = 0;
 
-      console.log('🚀 Запуск бота в режиме постоянной работы');
-      console.log('⏰ Интервал: 15-20 минут между комментариями');
+      logger.info('🚀 Запуск бота в режиме постоянной работы');
+      logger.info('⏰ Интервал: 15-20 минут между комментариями');
       
       while (true) {
           try {
               cycleCount++;
               
               // === ДОБАВИТЬ ДИАГНОСТИКУ ЗДЕСЬ ===
-              console.log(`\n🔍 [${new Date().toLocaleTimeString()}] === ДИАГНОСТИКА ЦИКЛА #${cycleCount} ===`);
+              logger.debug(`\n🔍 [${new Date().toLocaleTimeString()}] === ДИАГНОСТИКА ЦИКЛА #${cycleCount} ===`);
               
               // Проверка рабочего времени перед каждым циклом
-              console.log('🔍 Проверяем рабочее время...');
+              logger.debug('🔍 Проверяем рабочее время...');
               if (!delays.isActiveTime()) {
-                  console.log(`😴 [${new Date().toLocaleTimeString()}] Вне рабочего времени. Пауза 30 минут`);
+                  logger.info(`😴 [${new Date().toLocaleTimeString()}] Вне рабочего времени. Пауза 30 минут`);
                   await this.sleep(30 * 60 * 1000);
                   continue;
               }
 
-              console.log(`🔄 [${new Date().toLocaleTimeString()}] === ЦИКЛ #${cycleCount} ===`);
+              logger.info(`🔄 [${new Date().toLocaleTimeString()}] === ЦИКЛ #${cycleCount} ===`);
               
               // Выполняем один цикл работы
-              console.log('🔍 Запускаем executeWorkCycle...');
+              logger.debug('🔍 Запускаем executeWorkCycle...');
               const success = await this.executeWorkCycle();
               
               if (success) {
                   successCount++;
-                  console.log(`✅ [${new Date().toLocaleTimeString()}] Комментарий опубликован успешно`);
+                  logger.success(`✅ [${new Date().toLocaleTimeString()}] Комментарий опубликован успешно`);
               } else {
                   errorCount++;
-                  console.log(`❌ [${new Date().toLocaleTimeString()}] Цикл завершился с ошибкой`);
+                  logger.error(`❌ [${new Date().toLocaleTimeString()}] Цикл завершился с ошибкой`);
               }
 
               // Статистика
-              console.log(`📊 Статистика: ${successCount} успешных, ${errorCount} ошибок из ${cycleCount} циклов`);
+              logger.info(`📊 Статистика: ${successCount} успешных, ${errorCount} ошибок из ${cycleCount} циклов`);
 
               // Случайная пауза 15-20 минут
               const pauseMinutes = this.getRandomPause();
               const pauseMs = pauseMinutes * 60 * 1000;
               
-              console.log(`⏳ [${new Date().toLocaleTimeString()}] Пауза ${pauseMinutes} минут до следующего комментария`);
-              console.log(`🎯 Следующий запуск: ${new Date(Date.now() + pauseMs).toLocaleTimeString()}`);
+              logger.info(`⏳ [${new Date().toLocaleTimeString()}] Пауза ${pauseMinutes} минут до следующего комментария`);
+              logger.info(`🎯 Следующий запуск: ${new Date(Date.now() + pauseMs).toLocaleTimeString()}`);
               
               await this.sleep(pauseMs);
 
           } catch (error) {
               errorCount++;
-              console.error(`💥 [${new Date().toLocaleTimeString()}] Критическая ошибка в основном цикле:`, error.message);
+              logger.error(`💥 [${new Date().toLocaleTimeString()}] Критическая ошибка в основном цикле`, { message: error.message });
               
               // Пауза после ошибки перед повтором (5 минут)
-              console.log('⏳ Пауза 5 минут после ошибки...');
+              logger.info('⏳ Пауза 5 минут после ошибки...');
               await this.sleep(5 * 60 * 1000);
           }
       }
@@ -564,18 +564,18 @@ async login() {
       let browser = null;
       
       try {
-          console.log('🔍 === ДИАГНОСТИКА executeWorkCycle ===');
+          logger.debug('🔍 === ДИАГНОСТИКА executeWorkCycle ===');
           
           // ИСПРАВЛЕНИЕ: Используем старый BrowserManager если возможно
-          console.log('🔍 Шаг 1: Инициализация браузера...');
+          logger.debug('🔍 Шаг 1: Инициализация браузера...');
           // // ДИАГНОСТИКА BROWSERMANAGER
-          console.log('🔍 === ДИАГНОСТИКА BROWSERMANAGER ===');
-          console.log('🔍 this.browserManager:', !!this.browserManager);
-          console.log('🔍 this.browserManager.launch:', typeof this.browserManager?.launch);
-          console.log('🔍 this.browserManager.loadSession:', typeof this.browserManager?.loadSession);
-          console.log('🔍 this.browserManager.saveSession:', typeof this.browserManager?.saveSession);
-          console.log('🔍 BrowserManager методы:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.browserManager || {})));
-          console.log('🔍 Доступные методы BrowserManager:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.browserManager)));
+          logger.debug('🔍 === ДИАГНОСТИКА BROWSERMANAGER ===');
+          logger.debug('🔍 this.browserManager:', !!this.browserManager);
+          logger.debug('🔍 this.browserManager.launch:', typeof this.browserManager?.launch);
+          logger.debug('🔍 this.browserManager.loadSession:', typeof this.browserManager?.loadSession);
+          logger.debug('🔍 this.browserManager.saveSession:', typeof this.browserManager?.saveSession);
+          logger.debug('🔍 BrowserManager методы:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.browserManager || {})));
+          logger.debug('🔍 Доступные методы BrowserManager:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.browserManager)));
           
           try {
               // Пробуем старый способ через BrowserManager
@@ -585,10 +585,10 @@ async login() {
               this.page = this.browserManager.page;
               browser = this.browserManager.browser;
               this.page = this.browserManager.page;
-              console.log('✅ Используем BrowserManager (старый способ)');
+              logger.success('✅ Используем BrowserManager (старый способ)');
               
           } catch (error) {
-              console.log('⚠️ BrowserManager недоступен, используем прямую инициализацию');
+              logger.warning('⚠️ BrowserManager недоступен, используем прямую инициализацию');
               
               // Fallback к новому способу
               const playwright = require('playwright');
@@ -611,13 +611,13 @@ async login() {
               throw new Error('Не удалось инициализировать браузер');
           }
 
-          console.log('🔍 Шаг 3: Авторизация...');
+          logger.debug('🔍 Шаг 3: Авторизация...');
           const loginSuccess = await this.login();
           if (!loginSuccess) {
               throw new Error('Не удалось авторизоваться');
           }
 
-          console.log('🔍 Шаг 4: Поиск и комментирование поста...');
+          logger.debug('🔍 Шаг 4: Поиск и комментирование поста...');
           const commentSuccess = await this.findAndCommentPost();
           if (!commentSuccess) {
               throw new Error('Не удалось прокомментировать пост');
@@ -626,7 +626,7 @@ async login() {
           return true;
 
       } catch (error) {
-          console.error(`❌ Ошибка в рабочем цикле: ${error.message}`);
+          logger.error('❌ Ошибка в рабочем цикле', { message: error.message });
           return false;
           
       } finally {
@@ -634,16 +634,16 @@ async login() {
           if (this.browserManager.browser) {
               try {
                   await this.browserManager.close();
-                  console.log('🔚 BrowserManager закрыт');
+                  logger.info('🔚 BrowserManager закрыт');
               } catch (error) {
-                  console.error('⚠️ Ошибка закрытия BrowserManager:', error.message);
+                  logger.warning('⚠️ Ошибка закрытия BrowserManager:', { message: error.message });
               }
           } else if (browser) {
               try {
                   await browser.close();
-                  console.log('🔚 Браузер закрыт напрямую');
+                  logger.info('🔚 Браузер закрыт напрямую');
               } catch (error) {
-                  console.error('⚠️ Ошибка закрытия браузера:', error.message);
+                  logger.warning('⚠️ Ошибка закрытия браузера:', { message: error.message });
               }
           }      // Если используем BrowserManager - не закрываем браузер здесь
       }
@@ -666,25 +666,25 @@ async login() {
    */
   async findAndCommentPost() {
       try {
-          console.log('🔍 === ДИАГНОСТИКА findAndCommentPost ===');
-          
-          console.log('🔍 Вызываем findAndClickActualPost...');
+          logger.debug('🔍 === ДИАГНОСТИКА findAndCommentPost ===');
+
+          logger.debug('🔍 Вызываем findAndClickActualPost...');
           const success = await this.findAndClickActualPost();
           
-          console.log('🔍 Результат findAndClickActualPost:', success);
+          logger.debug('🔍 Результат findAndClickActualPost:', success);
           if (!success) {
               throw new Error('Не удалось найти и открыть пост');
           }
           
-          console.log('🔍 Вызываем commentOnOpenPost...');
+          logger.debug('🔍 Вызываем commentOnOpenPost...');
           const commentSuccess = await this.commentOnOpenPost();
           
-          console.log('🔍 Результат commentOnOpenPost:', commentSuccess);
+          logger.debug('🔍 Результат commentOnOpenPost:', commentSuccess);
           return commentSuccess;
           
       } catch (error) {
-          console.error('❌ Ошибка поиска/комментирования поста:', error.message);
-          console.error('❌ Stack trace:', error.stack);
+          logger.error('❌ Ошибка поиска/комментирования поста', { message: error.message });
+          logger.debug('❌ Stack trace:', error.stack);
           return false;
       }
   }
@@ -699,7 +699,7 @@ async login() {
       
       // Валидация значений
       if (minMinutes >= maxMinutes) {
-          console.log(' Некорректные настройки интервала в .env, используем значения по умолчанию');
+          logger.warning(' Некорректные настройки интервала в .env, используем значения по умолчанию');
           return 17.5; // Среднее значение по умолчанию
       }
       
@@ -711,7 +711,7 @@ async login() {
       // Округляем до десятых и ограничиваем разумными пределами
       const result = Math.max(5, Math.min(60, Math.round(finalMinutes * 10) / 10));
       
-      console.log(` Интервал из .env: ${minMinutes}-${maxMinutes} мин → выбрано: ${result} мин`);
+      logger.info(` Интервал из .env: ${minMinutes}-${maxMinutes} мин → выбрано: ${result} мин`);
       return result;
   }
 
@@ -725,13 +725,13 @@ async login() {
           // Возможность прервать сон по сигналу (для graceful shutdown)
           process.once('SIGINT', () => {
               clearTimeout(timeout);
-              console.log('\n🛑 Получен сигнал остановки');
+              logger.warning('\n🛑 Получен сигнал остановки');
               process.exit(0);
           });
-          
+
           process.once('SIGTERM', () => {
               clearTimeout(timeout);
-              console.log('\n🛑 Получен сигнал завершения');
+              logger.warning('\n🛑 Получен сигнал завершения');
               process.exit(0);
           });
       });
@@ -746,20 +746,20 @@ async function startBot() {
     
     // Обработка сигналов остановки
     process.on('SIGINT', () => {
-        console.log('\n🛑 Получен сигнал остановки (Ctrl+C)');
-        console.log('🔄 Завершение текущих операций...');
+        logger.warning('\n🛑 Получен сигнал остановки (Ctrl+C)');
+        logger.info('🔄 Завершение текущих операций...');
         process.exit(0);
     });
-    
+
     process.on('SIGTERM', () => {
-        console.log('\n🛑 Получен сигнал завершения');
+        logger.warning('\n🛑 Получен сигнал завершения');
         process.exit(0);
     });
 
     // Инициализация
     const initSuccess = await bot.init();
     if (!initSuccess) {
-        console.error('❌ Не удалось инициализировать бота');
+        logger.error('❌ Не удалось инициализировать бота');
         process.exit(1);
     }
 
@@ -770,7 +770,7 @@ async function startBot() {
 // Запускаем бота
 if (require.main === module) {
     startBot().catch(error => {
-        console.error('💥 Фатальная ошибка:', error);
+        logger.error('💥 Фатальная ошибка:', error);
         process.exit(1);
     });
 }

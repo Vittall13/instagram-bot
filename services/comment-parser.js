@@ -109,7 +109,7 @@ class CommentParser {
             const targetUsefulComments = 20; // Сколько хотим получить для анализа
             const totalToParse = targetUsefulComments + excludeCount; // Парсим ровно столько сколько нужно
 
-            console.log(`🎯 Точный расчет: ${targetUsefulComments} полезных + ${excludeCount} для исключения = ${totalToParse} всего`);
+            logger.info(`🎯 Точный расчет: ${targetUsefulComments} полезных + ${excludeCount} для исключения = ${totalToParse} всего`);
             // logger.info(`🎯 Цель: ${targetUsefulComments} полезных комментариев`);
             // logger.info(`📊 Будем парсить ${totalToParse} комментариев (${targetUsefulComments} + ${excludeCount} для исключения)`);
             
@@ -135,7 +135,7 @@ class CommentParser {
             return comments.slice(0, 20); // Возвращаем максимум 20 для анализа
             
         } catch (error) {
-            console.error('❌ DETECTED parseCommentsFromPost ERROR:', error);
+            logger.debug('❌ DETECTED parseCommentsFromPost ERROR:', error);
             logger.error('❌ Ошибка динамического парсинга:', error.message);
             return [];
         }
@@ -449,10 +449,10 @@ class CommentParser {
                     // Проверяем тот ли это день
                     if (savedData.date === today) {
                         workData = savedData;
-                        console.log(`⏰ Продолжаем работу в том же дне. Комментариев: ${workData.commentsCount}`);
+                        logger.info(`⏰ Продолжаем работу в том же дне. Комментариев: ${workData.commentsCount}`);
                     } else {
-                        console.log(`🌅 Новый день! Был: ${savedData.date}, стал: ${today}`);
-                        console.log(`🔄 Обнуляем счетчик с ${savedData.commentsCount} до 3`);
+                        logger.info(`🌅 Новый день! Был: ${savedData.date}, стал: ${today}`);
+                        logger.info(`🔄 Обнуляем счетчик с ${savedData.commentsCount} до 3`);
                     }
                 } catch {
                     // Старый формат (только время) - конвертируем
@@ -461,16 +461,16 @@ class CommentParser {
                     
                     if (savedDay === today) {
                         workData.startTime = content;
-                        console.log(`⚠️ Конвертируем старый формат файла для дня: ${savedDay}`);
+                        logger.warning(`⚠️ Конвертируем старый формат файла для дня: ${savedDay}`);
                     } else {
-                        console.log(`🌅 Новый день при конвертации! Был: ${savedDay}, стал: ${today}`);
+                        logger.info(`🌅 Новый день при конвертации! Был: ${savedDay}, стал: ${today}`);
                     }
                 }
             } else {
-                console.log(`🆕 Создаем новый файл для дня: ${today}`);
+                logger.info(`🆕 Создаем новый файл для дня: ${today}`);
             }
         } catch (error) {
-            console.log('⚠️ Ошибка чтения файла, создаем новый');
+            logger.warning('⚠️ Ошибка чтения файла, создаем новый');
         }
         
         // Дополнительная проверка: если сейчас начало рабочего дня - обнуляем счетчик
@@ -481,7 +481,7 @@ class CommentParser {
             
             // Если прошло время начала работы и файл старый - обнуляем
             if (now >= startOfWorkDay && workStarted < startOfWorkDay) {
-                console.log(`🌅 Начало рабочего дня в ${startHour}:00 - обнуляем счетчик`);
+                logger.info(`🌅 Начало рабочего дня в ${startHour}:00 - обнуляем счетчик`);
                 workData.commentsCount = 3;
                 workData.startTime = now.toISOString();
             }
@@ -491,10 +491,10 @@ class CommentParser {
         try {
             fs.writeFileSync(file, JSON.stringify(workData, null, 2));
         } catch (error) {
-            console.error('❌ Ошибка сохранения файла времени:', error.message);
+            logger.error('❌ Ошибка сохранения файла времени', { message: error.message });
         }
         
-        console.log(`🎯 Исключаем ${workData.commentsCount} комментариев (${workData.commentsCount - 3} опубликованных + 3 базовых)`);
+        logger.info(`🎯 Исключаем ${workData.commentsCount} комментариев (${workData.commentsCount - 3} опубликованных + 3 базовых)`);
         return workData.commentsCount;
     }
 
@@ -519,14 +519,14 @@ class CommentParser {
                 // Сохраняем
                 fs.writeFileSync(file, JSON.stringify(workData, null, 2));
                 
-                console.log(`📈 Счетчик увеличен до ${workData.commentsCount} (опубликованных: ${workData.commentsCount - 3})`);
+                logger.info(`📈 Счетчик увеличен до ${workData.commentsCount} (опубликованных: ${workData.commentsCount - 3})`);
                 return workData.commentsCount;
             } else {
-                console.error('❌ Файл bot-start-time.txt не найден при увеличении счетчика');
+                logger.error('❌ Файл bot-start-time.txt не найден при увеличении счетчика');
                 return 3;
             }
         } catch (error) {
-            console.error('❌ Ошибка увеличения счетчика:', error.message);
+            logger.error('❌ Ошибка увеличения счетчика', { message: error.message });
             return 3;
         }
     }

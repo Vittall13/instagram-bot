@@ -177,8 +177,8 @@ isActiveTime() {
     const isActive = currentHour >= startHour && currentHour < endHour;
     
     if (!isActive) {
-        console.log(`⏰ Текущее время: ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`);
-        console.log(`⏰ Рабочие часы (.env): ${startHour}:00 - ${endHour}:00`);
+        logger.info(`⏰ Текущее время: ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`);
+        logger.info(`⏰ Рабочие часы (.env): ${startHour}:00 - ${endHour}:00`);
     }
     
     return isActive;
