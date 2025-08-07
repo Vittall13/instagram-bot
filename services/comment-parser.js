@@ -9,7 +9,7 @@ const delays = require('../utils/delays.js');
 class CommentParser {
     constructor() {
         this.config = {
-            maxComments: 20,           // Максимальное количество комментариев
+            maxComments: 50,           // Максимальное количество комментариев
             minCommentLength: 10,      // Минимальная длина комментария  
             maxCommentLength: 500,     // Максимальная длина комментария
             skipBotPatterns: [         // Паттерны bot комментариев
@@ -104,13 +104,14 @@ class CommentParser {
             // Подготовка страницы
             await this.preparePageForParsing(page);
             
-            // КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: вычисляем цель парсинга ЗАРАНЕЕ
+            // УЛУЧШЕННАЯ ЛОГИКА: точное количество без ограничений
             const excludeCount = this.getExcludeCount();
             const targetUsefulComments = 20; // Сколько хотим получить для анализа
-            const totalToParse = targetUsefulComments + excludeCount;
-            
-            logger.info(`🎯 Цель: ${targetUsefulComments} полезных комментариев`);
-            logger.info(`📊 Будем парсить ${totalToParse} комментариев (${targetUsefulComments} + ${excludeCount} для исключения)`);
+            const totalToParse = targetUsefulComments + excludeCount; // Парсим ровно столько сколько нужно
+
+            console.log(`🎯 Точный расчет: ${targetUsefulComments} полезных + ${excludeCount} для исключения = ${totalToParse} всего`);
+            // logger.info(`🎯 Цель: ${targetUsefulComments} полезных комментариев`);
+            // logger.info(`📊 Будем парсить ${totalToParse} комментариев (${targetUsefulComments} + ${excludeCount} для исключения)`);
             
             // Попытка парсинга с динамической целью
             let comments = await this.tryMultipleParsingStrategies(page, totalToParse);
@@ -422,30 +423,112 @@ class CommentParser {
     getExcludeCount() {
         const fs = require('fs');
         const file = 'bot-start-time.txt';
-        let startOfDay;
+        const now = new Date();
+        const today = now.toDateString(); // "Thu Aug 07 2025"
+        
+        // Проверяем рабочее время
+        const startHour = parseInt(process.env.WORKING_HOURS_START) || 7;
+        const endHour = parseInt(process.env.WORKING_HOURS_END) || 23;
+        const currentHour = now.getHours();
+        const isWorkingTime = currentHour >= startHour && currentHour < endHour;
+        
+        let workData = {
+            date: today,
+            startTime: now.toISOString(),
+            commentsCount: 3 // Начинаем с 3 (базовое количество)
+        };
+        
         try {
             if (fs.existsSync(file)) {
-                const t = new Date(fs.readFileSync(file, 'utf8'));
-                if (Date.now() - t.getTime() < 24 * 60 * 60 * 1000) {
-                    startOfDay = t;
+                const content = fs.readFileSync(file, 'utf8').trim();
+                
+                // Пробуем парсить как JSON (новый формат)
+                try {
+                    const savedData = JSON.parse(content);
+                    
+                    // Проверяем тот ли это день
+                    if (savedData.date === today) {
+                        workData = savedData;
+                        console.log(`⏰ Продолжаем работу в том же дне. Комментариев: ${workData.commentsCount}`);
+                    } else {
+                        console.log(`🌅 Новый день! Был: ${savedData.date}, стал: ${today}`);
+                        console.log(`🔄 Обнуляем счетчик с ${savedData.commentsCount} до 3`);
+                    }
+                } catch {
+                    // Старый формат (только время) - конвертируем
+                    const savedTime = new Date(content);
+                    const savedDay = savedTime.toDateString();
+                    
+                    if (savedDay === today) {
+                        workData.startTime = content;
+                        console.log(`⚠️ Конвертируем старый формат файла для дня: ${savedDay}`);
+                    } else {
+                        console.log(`🌅 Новый день при конвертации! Был: ${savedDay}, стал: ${today}`);
+                    }
                 }
+            } else {
+                console.log(`🆕 Создаем новый файл для дня: ${today}`);
             }
-        } catch {}
-        if (!startOfDay) {
-            startOfDay = new Date();
-            try { fs.writeFileSync(file, startOfDay.toISOString()); } catch {}
-            logger.info(`🕐 Установлено время старта: ${startOfDay.toLocaleString()}`);
+        } catch (error) {
+            console.log('⚠️ Ошибка чтения файла, создаем новый');
         }
-        const hoursWorked = Math.floor((Date.now() - startOfDay.getTime()) / (1000 * 60 * 60));
         
-        // НОВАЯ ЛОГИКА: начинаем с 3, добавляем по 3 каждый час
-        let excludeCount = 3 + hoursWorked * 3;
+        // Дополнительная проверка: если сейчас начало рабочего дня - обнуляем счетчик
+        if (isWorkingTime) {
+            const startOfWorkDay = new Date(now);
+            startOfWorkDay.setHours(startHour, 0, 0, 0);
+            const workStarted = new Date(workData.startTime);
+            
+            // Если прошло время начала работы и файл старый - обнуляем
+            if (now >= startOfWorkDay && workStarted < startOfWorkDay) {
+                console.log(`🌅 Начало рабочего дня в ${startHour}:00 - обнуляем счетчик`);
+                workData.commentsCount = 3;
+                workData.startTime = now.toISOString();
+            }
+        }
         
-        // Разумное ограничение - максимум 30 комментариев для исключения
-        excludeCount = Math.min(excludeCount, 30);
+        // Сохраняем обновленные данные
+        try {
+            fs.writeFileSync(file, JSON.stringify(workData, null, 2));
+        } catch (error) {
+            console.error('❌ Ошибка сохранения файла времени:', error.message);
+        }
         
-        logger.debug(`⏰ Нужно исключить ${excludeCount} комментариев (работаем ${hoursWorked} ч)`);
-        return excludeCount;
+        console.log(`🎯 Исключаем ${workData.commentsCount} комментариев (${workData.commentsCount - 3} опубликованных + 3 базовых)`);
+        return workData.commentsCount;
+    }
+
+    /**
+     * Увеличение счетчика опубликованных комментариев
+     */
+    async incrementPublishedCount() {
+        const fs = require('fs');
+        const file = 'bot-start-time.txt';
+        const { readFile, writeFile } = require('fs').promises;
+        if (!fs.existsSync(file)) this.getExcludeCount();    // создаст файл
+        
+        try {
+            if (fs.existsSync(file)) {
+                const content = fs.readFileSync(file, 'utf8').trim();
+                const workData = JSON.parse(content);
+                
+                // Увеличиваем счетчик
+                workData.commentsCount = (workData.commentsCount || 3) + 1;
+                workData.lastComment = new Date().toISOString();
+                
+                // Сохраняем
+                fs.writeFileSync(file, JSON.stringify(workData, null, 2));
+                
+                console.log(`📈 Счетчик увеличен до ${workData.commentsCount} (опубликованных: ${workData.commentsCount - 3})`);
+                return workData.commentsCount;
+            } else {
+                console.error('❌ Файл bot-start-time.txt не найден при увеличении счетчика');
+                return 3;
+            }
+        } catch (error) {
+            console.error('❌ Ошибка увеличения счетчика:', error.message);
+            return 3;
+        }
     }
 
     // Фильтрация служебных сообщений Instagram
