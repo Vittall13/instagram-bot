@@ -566,16 +566,16 @@ async login() {
       try {
           console.log('🔍 === ДИАГНОСТИКА executeWorkCycle ===');
           
-          // ИСПРАВЛЕНИЕ: Используем старый BrowserManager если возможно
-          console.log('🔍 Шаг 1: Инициализация браузера...');
-          // // ДИАГНОСТИКА BROWSERMANAGER
-          console.log('🔍 === ДИАГНОСТИКА BROWSERMANAGER ===');
-          console.log('🔍 this.browserManager:', !!this.browserManager);
-          console.log('🔍 this.browserManager.launch:', typeof this.browserManager?.launch);
-          console.log('🔍 this.browserManager.loadSession:', typeof this.browserManager?.loadSession);
-          console.log('🔍 this.browserManager.saveSession:', typeof this.browserManager?.saveSession);
-          console.log('🔍 BrowserManager методы:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.browserManager || {})));
-          console.log('🔍 Доступные методы BrowserManager:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.browserManager)));
+          // // ИСПРАВЛЕНИЕ: Используем старый BrowserManager если возможно
+          // console.log('🔍 Шаг 1: Инициализация браузера...');
+          // // // ДИАГНОСТИКА BROWSERMANAGER
+          // console.log('🔍 === ДИАГНОСТИКА BROWSERMANAGER ===');
+          // console.log('🔍 this.browserManager:', !!this.browserManager);
+          // console.log('🔍 this.browserManager.launch:', typeof this.browserManager?.launch);
+          // console.log('🔍 this.browserManager.loadSession:', typeof this.browserManager?.loadSession);
+          // console.log('🔍 this.browserManager.saveSession:', typeof this.browserManager?.saveSession);
+          // console.log('🔍 BrowserManager методы:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.browserManager || {})));
+          // console.log('🔍 Доступные методы BrowserManager:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.browserManager)));
           
           try {
               // Пробуем старый способ через BrowserManager

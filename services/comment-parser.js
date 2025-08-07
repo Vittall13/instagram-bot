@@ -40,58 +40,65 @@ class CommentParser {
     }
 
     async tryMultipleParsingStrategies(page, targetCount = 20) {
-    const strategies = [
-        { name: 'current_pattern', selector: 'div._ap3a span[dir="auto"]' },
-        { name: 'structural', selector: 'article div div span[dir="auto"]' },
-        { name: 'broad', selector: 'span[dir="auto"]' }
-    ];
-    
-    this.usedStrategies = [];
-    
-    for (const strategy of strategies) {
-        try {
+        const strategies = [
+            { name: 'current_pattern', selector: 'div._ap3a span[dir="auto"]' },
+            { name: 'structural', selector: 'article div div span[dir="auto"]' },
+            { name: 'broad', selector: 'span[dir="auto"]' }
+        ];
+        this.usedStrategies = [];
+        const threshold = Math.floor(targetCount * 0.9); // 90% от цели
+
+        for (const strategy of strategies) {
             logger.info(`🎯 Стратегия "${strategy.name}": ${strategy.selector} (цель: ${targetCount})`);
             
             const elements = await page.$$(strategy.selector);
             logger.info(`   Найдено ${elements.length} элементов`);
-            
-            if (elements.length > 0) {
-                // ДИНАМИЧЕСКОЕ ИЗВЛЕЧЕНИЕ - берем столько сколько нужно
-                const comments = [];
-                const maxElements = Math.min(elements.length, targetCount + 5); // +5 запас на фильтрацию
-                
-                for (let i = 0; i < maxElements; i++) {
-                    try {
-                        const text = await elements[i].textContent();
-                        if (text && text.trim().length > 10) {
-                            comments.push(text.trim());
-                            
-                            // Останавливаемся когда достигли цели
-                            if (comments.length >= targetCount) break;
-                        }
-                    } catch (error) {
-                        continue;
+
+            const comments = [];
+            const maxElements = Math.min(elements.length, targetCount + 10); // запас +10
+
+            for (let i = 0; i < maxElements; i++) {
+                try {
+                    const text = await elements[i].textContent();
+                    if (text && text.trim().length > this.config.minCommentLength) {
+                        comments.push(text.trim());
+                        if (comments.length >= targetCount) break; // полный targetCount
                     }
-                }
-                
-                logger.info(`   Извлечено ${comments.length} текстовых комментариев`);
-                
-                if (comments.length >= Math.min(targetCount * 0.7, 10)) {
-                    logger.success(`✅ Стратегия "${strategy.name}" успешна!`);
-                    this.usedStrategies.push(strategy.name);
-                    return comments;
+                } catch {
+                    continue;
                 }
             }
-            
-        } catch (error) {
-            logger.debug(`❌ Стратегия "${strategy.name}" ошибка: ${error.message}`);
-            continue;
+
+            logger.info(`   Извлечено ${comments.length} текстовых комментариев`);
+            if (comments.length >= threshold) {
+                logger.success(`✅ Стратегия "${strategy.name}" превысила порог ${threshold}`);
+                this.usedStrategies.push(strategy.name);
+                return comments;
+            }
         }
+
+        // Fallback: выбираем стратегию с максимальным числом комментариев
+        let bestComments = [];
+        for (const strategy of strategies) {
+            const elements = await page.$$(strategy.selector);
+            const texts = [];
+            for (const el of elements) {
+                try {
+                    const t = await el.textContent();
+                    if (t && t.trim().length > this.config.minCommentLength) {
+                        texts.push(t.trim());
+                    }
+                } catch {
+                    continue;
+                }
+            }
+            if (texts.length > bestComments.length) {
+                bestComments = texts;
+            }
+        }
+        logger.warning('⚠️ Все стратегии не дали нужного результата, используем максимум из найденного');
+        return bestComments.slice(0, targetCount);
     }
-    
-    logger.warning('⚠️ Все стратегии не дали нужного результата');
-    return [];
-}
 
     /**
      * УПРОЩЕННАЯ АДАПТИВНАЯ СИСТЕМА v2.1
