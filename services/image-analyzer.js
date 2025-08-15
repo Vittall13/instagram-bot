@@ -100,133 +100,107 @@ class ImageAnalyzer {
      * Проверяет кликабельность изображения
      */
     async isClickable(image) {
-        try {
-            // Проверяем является ли элемент или его родитель кликабельным
-            const clickableParent = await image.evaluateHandle(el => {
-                // Проверяем текущий элемент и родителей
-                let current = el;
-                while (current && current.tagName !== 'BODY') {
-                    if (
-                        current.tagName === 'A' ||
-                        current.tagName === 'BUTTON' ||
-                        current.getAttribute('role') === 'button' ||
-                        current.style.cursor === 'pointer' ||
-                        current.hasAttribute('onclick')
-                    ) {
-                        return current;
-                    }
-                    current = current.parentElement;
-                }
-                return null;
-            });
-
-            const isClickable = await clickableParent.evaluate(el => el !== null);
-            await clickableParent.dispose();
-            
-            return isClickable;
-        } catch (error) {
-            logger.debug(`Ошибка проверки кликабельности: ${error.message}`);
-            return false;
+    try {
+        const clickableParent = await image.evaluateHandle((el) => {
+        let current = el;
+        while (current && current.tagName !== 'BODY') {
+            const role = current.getAttribute && current.getAttribute('role');
+            if (
+            current.tagName === 'A' ||
+            current.tagName === 'BUTTON' ||
+            role === 'button' ||
+            (current.style && current.style.cursor === 'pointer') ||
+            current.hasAttribute?.('onclick')
+            ) {
+            return current;
+            }
+            current = current.parentElement;
         }
+        return null;
+        });
+
+        const isClickable = await clickableParent.evaluate((el) => el !== null);
+        await clickableParent.dispose();
+        return isClickable;
+    } catch (error) {
+        logger.debug(`Ошибка проверки кликабельности: ${error.message}`);
+        return false;
+    }
     }
 
     /**
      * Анализирует все изображения на странице и фильтрует их
      */
     async analyzeAndFilterImages(page) {
+    try {
+        logger.info('🔍 Анализируем и фильтруем изображения...');
+        const images = await page.$$('img');
+
+        const analysisResults = {
+        total: images.length,
+        profilePhotos: 0,
+        stories: 0,
+        realPosts: 0,
+        clickablePosts: [],
+        allAnalysis: []
+        };
+
+        for (let i = 0; i < images.length; i += 1) {
+        const image = images[i];
         try {
-            logger.info('🔍 Анализируем и фильтруем изображения...');
-            
-            // Получаем все изображения
-            const images = await page.$$('img');
-            
-            const analysisResults = {
-                total: images.length,
-                profilePhotos: 0,
-                stories: 0,
-                realPosts: 0,
-                clickablePosts: [],
-                allAnalysis: []
-            };
+            const boundingBox = await image.boundingBox();
+            if (!boundingBox) continue;
 
-            // Анализируем каждое изображение
-            for (let i = 0; i < images.length; i++) {
-                const image = images[i];
-                
-                try {
-                    // Получаем размеры
-                    const boundingBox = await image.boundingBox();
-                    if (!boundingBox) continue;
+            const caption = await this.extractCaption(image);
+            const analysis = await this.analyzeImage(image, boundingBox, caption);
 
-                    // Получаем подпись (пытаемся найти ближайший текст)
-                    const caption = await this.extractCaption(image);
-                    
-                    // Анализируем изображение
-                    const analysis = await this.analyzeImage(image, boundingBox, caption);
-                    
-                    // Подсчитываем статистику
-                    if (analysis.isProfilePhoto) analysisResults.profilePhotos++;
-                    if (analysis.isStory) analysisResults.stories++;
-                    if (analysis.isRealPost) analysisResults.realPosts++;
-                    
-                    // Сохраняем кликабельные посты
-                    if (analysis.isRealPost && analysis.isClickable) {
-                        analysisResults.clickablePosts.push({
-                            image: image,
-                            analysis: analysis,
-                            index: i + 1
-                        });
-                    }
+            if (analysis.isProfilePhoto) analysisResults.profilePhotos += 1;
+            if (analysis.isStory) analysisResults.stories += 1;
+            if (analysis.isRealPost) analysisResults.realPosts += 1;
 
-                    analysisResults.allAnalysis.push(analysis);
-                    
-                } catch (error) {
-                    logger.debug(`Ошибка анализа изображения ${i + 1}: ${error.message}`);
-                }
+            if (analysis.isRealPost && analysis.isClickable) {
+            analysisResults.clickablePosts.push({ image, analysis, index: i + 1 });
             }
 
-            // Логируем результаты анализа
-            this.logAnalysisResults(analysisResults);
-            
-            return analysisResults;
-            
+            analysisResults.allAnalysis.push(analysis);
         } catch (error) {
-            logger.error('Ошибка анализа изображений', { message: error.message });
-            throw error;
+            logger.debug(`Ошибка анализа изображения ${i + 1}: ${error.message}`);
         }
+        }
+
+        this.logAnalysisResults(analysisResults);
+        return analysisResults;
+    } catch (error) {
+        logger.error('Ошибка анализа изображений', { message: error.message });
+        throw error;
+    }
     }
 
     /**
      * Извлекает подпись к изображению
      */
     async extractCaption(image) {
-        try {
-            // Пытаемся найти подпись рядом с изображением
-            const caption = await image.evaluate(img => {
-                // Проверяем alt атрибут
-                if (img.alt && img.alt.length > 10) {
-                    return img.alt;
-                }
+    try {
+        const caption = await image.evaluate((img) => {
+        if (img.alt && img.alt.length > 10) return img.alt;
 
-                // Ищем текст в родительских элементах
-                let parent = img.parentElement;
-                let attempts = 0;
-                while (parent && attempts < 3) {
-                    const textContent = parent.textContent || '';
-                    if (textContent.length > 10 && textContent.length < 500) {
-                        return textContent.substring(0, 200);
-                    }
-                    parent = parent.parentElement;
-                    attempts++;
-                }
-
-                return '';
-            });
-
-            return caption || '';
-        } catch (error) {
-            return '';
+        let parent = img.parentElement;
+        let attempts = 0;
+        while (parent && attempts < 3) {
+            const textContent = (parent.textContent || '').trim();
+            if (textContent.length > 10 && textContent.length < 500) {
+            return textContent.substring(0, 200);
+            }
+            parent = parent.parentElement;
+            attempts += 1;
         }
+        return '';
+        });
+
+        return caption || '';
+    } catch (_) {
+        return '';
+    }
     }
 
     /**

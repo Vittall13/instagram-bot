@@ -9,6 +9,40 @@ const commentParser = require('./services/comment-parser.js');
 const commentGenerator = require('./services/comment-generator.js'); 
 const commentBuffer = require('./services/comment-buffer.js');  
 
+// ===== helpers: timeout wrapper + human wiggle =====
+async function withTimeout(promise, ms, label) {
+  let timerId;
+  const timeout = new Promise((_, reject) => {
+    timerId = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timerId);
+  }
+}
+
+async function humanWiggle(page) {
+  try {
+    const moves = 3 + Math.floor(Math.random() * 4);                                // 3..6
+    for (let i = 0; i < moves; i += 1) {
+      const x = 200 + Math.floor(Math.random() * 800);
+      const y = 150 + Math.floor(Math.random() * 600);
+      const steps = 3 + Math.floor(Math.random() * 4);
+      await page.mouse.move(x, y, { steps });
+      await page.waitForTimeout(80 + Math.floor(Math.random() * 240));             // 80..320ms
+    }
+    if (Math.random() < 0.7) {
+      const deltaY = (Math.random() < 0.5 ? -1 : 1) * (200 + Math.floor(Math.random() * 600));
+      await page.mouse.wheel(0, deltaY);
+      await page.waitForTimeout(200 + Math.floor(Math.random() * 600));            // 200..800ms
+    }
+  } catch (_) {
+    // ignore
+  }
+}
+// ===== end helpers =====
+
 class InstagramBot {
     constructor() {
         this.browserManager = new BrowserManager(config);
@@ -23,38 +57,38 @@ class InstagramBot {
 /**
  * ИНИЦИАЛИЗАЦИЯ ДЛЯ ПОСТОЯННОЙ РАБОТЫ
  */
-async init() {
-    try {
-        // УЛУЧШЕННАЯ ПРОВЕРКА КОНФИГУРАЦИИ
-        const profileUrl = this.config.targetProfile || this.config.profile?.username;
-        
-        if (!profileUrl) {
-            console.error('❌ Конфигурация не найдена!');
-            console.error('📋 Проверьте файл config/config.json');
-            console.error('📋 Должно содержать: "targetProfile": "https://www.instagram.com/username/"');
-            throw new Error('Не указан профиль для мониторинга');
-        }
-        
-        console.log(`🎯 Целевой профиль: ${profileUrl}`);
-        
-        // Загружаем рабочие часы
-        const startHour = parseInt(process.env.WORKING_HOURS_START) || this.config.workingHours?.[0] || 9;
-        const endHour = parseInt(process.env.WORKING_HOURS_END) || this.config.workingHours?.[1] || 18;
-        console.log(`⏰ Рабочие часы: ${startHour}:00 - ${endHour}:00`);
-        
-        // Инициализация сервисов
-        this.initializeServices();
-        
-        console.log('✅ Инициализация завершена');
-        console.log('🚀 Бот готов к постоянной работе');
-        
-        return true;
-        
-    } catch (error) {
-        console.error('❌ Ошибка инициализации:', error.message);
-        return false;
-    }
-}
+  async init() {
+      try {
+          // УЛУЧШЕННАЯ ПРОВЕРКА КОНФИГУРАЦИИ
+          const profileUrl = this.config.targetProfile || this.config.profile?.username;
+          
+          if (!profileUrl) {
+              console.error('❌ Конфигурация не найдена!');
+              console.error('📋 Проверьте файл config/config.json');
+              console.error('📋 Должно содержать: "targetProfile": "https://www.instagram.com/username/"');
+              throw new Error('Не указан профиль для мониторинга');
+          }
+          
+          console.log(`🎯 Целевой профиль: ${profileUrl}`);
+          
+          // Загружаем рабочие часы
+          const startHour = parseInt(process.env.WORKING_HOURS_START) || this.config.workingHours?.[0] || 9;
+          const endHour = parseInt(process.env.WORKING_HOURS_END) || this.config.workingHours?.[1] || 18;
+          console.log(`⏰ Рабочие часы: ${startHour}:00 - ${endHour}:00`);
+          
+          // Инициализация сервисов
+          this.initializeServices();
+          
+          console.log('✅ Инициализация завершена');
+          console.log('🚀 Бот готов к постоянной работе');
+          
+          return true;
+          
+      } catch (error) {
+          console.error('❌ Ошибка инициализации:', error.message);
+          return false;
+      }
+  }
 
   /**
    * ИНИЦИАЛИЗАЦИЯ СЕРВИСОВ
@@ -64,148 +98,106 @@ async init() {
       logger.info('🔧 Сервисы инициализированы');
   }
 
-async login() {
+  async login() {
     try {
-        // === РАСШИРЕННАЯ ДИАГНОСТИКА АВТОРИЗАЦИИ ===
-        console.log('🔍 === ДИАГНОСТИКА АВТОРИЗАЦИИ ===');
-        console.log('🔍 BrowserManager.loadSession:', typeof this.browserManager.loadSession);
-        console.log('🔍 BrowserManager.saveSession:', typeof this.browserManager.saveSession);
-        
-        // Пробуем загрузить сессию с детальным логированием
-        console.log('🔍 Попытка загрузки сессии...');
-        const sessionLoaded = await this.browserManager.loadSession();
-        console.log('🔍 Результат загрузки сессии:', sessionLoaded);
-        
-        // Остальная логика остается без изменений...
-        logger.info('🔐 Переходим на Instagram...');
-      await this.page.goto('https://www.instagram.com', { 
+      console.log('🔍 === ДИАГНОСТИКА АВТОРИЗАЦИИ ===');
+      console.log('🔍 BrowserManager.loadSession:', typeof this.browserManager.loadSession);
+      console.log('🔍 BrowserManager.saveSession:', typeof this.browserManager.saveSession);
+
+      console.log('🔍 Попытка загрузки сессии...');
+      const sessionLoaded = await this.browserManager.loadSession();
+      console.log('🔍 Результат загрузки сессии:', sessionLoaded);
+
+      logger.info('🔐 Переходим на Instagram...');
+      await this.page.goto('https://www.instagram.com', {
         waitUntil: 'domcontentloaded',
-        timeout: this.config.timeouts.navigation 
+        timeout: this.config.timeouts.navigation
       });
-      
-      await this.page.waitForTimeout(3000);
+           await this.page.waitForTimeout(3000);
 
       try {
-        await this.page.waitForSelector('svg[aria-label="Home"], [aria-label="Home"], a[href="/"]', { 
-          timeout: 8000 
+        await this.page.waitForSelector('svg[aria-label="Home"], [aria-label="Home"], a[href="/"]', {
+          timeout: 8000
         });
         logger.success('✅ Авторизация успешна!');
         return true;
       } catch {
-        // Сессия не сработала - детальная диагностика
-        console.log('⚠️ Сохраненная сессия недействительна');
-        console.log('🔍 Проверяем причины...');
-        
-        // Проверяем доступность учетных данных из .env
-        const hasEnvCredentials = process.env.INSTAGRAM_USERNAME && process.env.INSTAGRAM_PASSWORD;
+               console.log('⚠️ Сохраненная сессия недействительна');
+               const hasEnvCredentials = process.env.INSTAGRAM_USERNAME && process.env.INSTAGRAM_PASSWORD;
         console.log('🔍 Учетные данные в .env:', hasEnvCredentials ? 'найдены' : 'отсутствуют');
-        
-        if (hasEnvCredentials) {
-            console.log('🔄 Попытка автоматической авторизации через .env...');
-            // Здесь можно добавить автоматический вход через учетные данные
-            // НО: только если вы согласитесь на этот механизм
-        }
-        
-        // Fallback к ручному вводу (существующий код)
+
         logger.success('🔑 Требуется ручная авторизация...');
         logger.success('📝 Войдите в Instagram и нажмите Enter...');
-        
-        await new Promise(resolve => {
+        await new Promise((resolve) => {
           process.stdin.once('data', () => {
             logger.info('✅ Продолжаем работу...');
             resolve();
           });
         });
-        
-        await this.browserManager.saveSession();
-
+               await this.browserManager.saveSession();
         return true;
       }
     } catch (error) {
       logger.error('Ошибка авторизации', { message: error.message });
       return false;
     }
-    }
+  }
 
   // ✅ УЛУЧШЕННЫЙ поиск с фильтрацией постов
   async findAndClickActualPost() {
-      try {
-          logger.action('Ищем НАСТОЯЩИЕ ПОСТЫ (исключаем профиль и истории)');
-          
-          // Переходим к профилю
-          logger.info('🌐 Переходим к профилю...');
-          await this.page.goto(this.config.targetProfile, { 
-              waitUntil: 'domcontentloaded',
-              timeout: this.config.timeouts.navigation 
-          });
-          
-          await delays.betweenActions();
+    try {
+      logger.action('Ищем НАСТОЯЩИЕ ПОСТЫ (исключаем профиль и истории)');
+      logger.info('🌐 Переходим к профилю...');
+      await this.page.goto(this.config.targetProfile, {
+        waitUntil: 'domcontentloaded',
+        timeout: this.config.timeouts.navigation
+      });
+      await delays.betweenActions();
 
-          // Анализируем изображения с помощью нового модуля
-          const analysisResults = await imageAnalyzer.analyzeAndFilterImages(this.page);
-          
-          // Выбираем лучший пост
-          const selectedPost = imageAnalyzer.selectBestPost(analysisResults);
-          
-          if (!selectedPost) {
-              throw new Error('Не найдено подходящих постов для комментирования');
-          }
+      // Три волны: без скролла, средний скролл, глубокий скролл
+      const waves = [0.0, 0.9, 1.8];
 
-          // Кликаем по выбранному посту
-          logger.info('\n🖱️ Кликаем по изображению поста...');
-          
-          await selectedPost.image.click();
-          logger.success(`✅ Клик выполнен по элементу: A`);
-          
-          // Получаем ссылку на пост
-          const href = await selectedPost.image.evaluate(img => {
-              const link = img.closest('a');
-              return link ? link.href : null;
-          });
-          
-          if (href) {
-              logger.info(`   Ссылка: ${href}`);
-          }
+      for (let wave = 0; wave < waves.length; wave += 1) {
+        if (waves[wave] > 0) {
+          await this.page.evaluate((m) => window.scrollBy(0, Math.floor(window.innerHeight * m)), waves[wave]);
+          await this.page.waitForTimeout(800 + Math.floor(Math.random() * 1600));
+          await humanWiggle(this.page);
+        }
 
+        const analysisResults = await imageAnalyzer.analyzeAndFilterImages(this.page);
+        const selectedPost = imageAnalyzer.selectBestPost(analysisResults);
+
+        if (selectedPost && selectedPost.image) {
+          logger.info('🖱️ Кликаем по изображению поста...');
+          await selectedPost.image.click({ delay: 60 + Math.floor(Math.random() * 140) });
           await delays.waitForClickResponse();
 
-          // Проверяем что пост действительно открылся
-          const currentUrl = this.page.url();
-          logger.info(`📍 URL после клика: ${currentUrl}`);
+          const postOpened = await this.page.evaluate(() => ({
+            hasModal: !!document.querySelector('div[role="dialog"], div[aria-modal="true"], div[class*="modal"]'),
+            hasPostUrl: window.location.pathname.includes('/p/') || window.location.pathname.includes('/reel/'),
+            hasCommentField: !!document.querySelector('textarea, [contenteditable="true"]')
+          }));
 
-          // Проверяем наличие ключевых элементов поста
-          const postOpened = await this.page.evaluate(() => {
-              return {
-                  hasModal: !!document.querySelector('div[role="dialog"], div[aria-modal="true"], div[class*="modal"]'),
-                  hasPostUrl: window.location.pathname.includes('/p/') || window.location.pathname.includes('/reel/'),
-                  hasCommentField: !!document.querySelector('textarea, [contenteditable="true"]')
-              };
-          });
+          logger.info(`📱 Модальное окно: ${postOpened.hasModal ? '✅' : '❌'}`);
+          logger.info(`🔗 URL поста: ${postOpened.hasPostUrl ? '✅' : '❌'}`);
+          logger.info(`💬 Поле комментария: ${postOpened.hasCommentField ? '✅' : '❌'}`);
 
-          logger.info(`📱 Модальное окно: ${postOpened.hasModal ? '✅ найдено' : '❌ не найдено'}`);
-          logger.info(`🔗 URL поста: ${postOpened.hasPostUrl ? '✅ найден' : '❌ не найден'}`);
-          logger.info(`💬 Поле комментария: ${postOpened.hasCommentField ? '✅ найдено' : '❌ не найдено'}`);
-
-          if (postOpened.hasModal || postOpened.hasPostUrl) {logger.success('✅ Пост успешно открыт!');
-              return true;
-          } else {
-              throw new Error('Пост не открылся - модальное окно или URL поста не найдены');
+          if (postOpened.hasModal || postOpened.hasPostUrl) {
+            logger.success('✅ Пост успешно открыт!');
+            return true;
           }
-
-          
-      } catch (error) {
-          logger.error('Ошибка поиска и клика по посту', { message: error.message });
-          
-          try {
-              await this.page.screenshot({
-                  path: 'post-click-error-screenshot.png',
-                  fullPage: true
-              });
-              logger.info('📸 Скриншот ошибки: post-click-error-screenshot.png');
-          } catch {}
-          
-          throw error;
+        }
       }
+
+      throw new Error('Не найдено подходящих постов для комментирования');
+    } catch (error) {
+      logger.error('Ошибка поиска и клика по посту', { message: error.message });
+      try {
+        await this.page.screenshot({ path: 'post-click-error-screenshot.png', fullPage: true });
+        logger.info('📸 Скриншот ошибки: post-click-error-screenshot.png');
+      } catch (_) {}
+      throw error;
+    }
   }
 
   //  УЛУЧШЕННЫЙ поиск поля комментария
@@ -561,92 +553,67 @@ async login() {
    * ВЫПОЛНЕНИЕ ОДНОГО РАБОЧЕГО ЦИКЛА
    */
   async executeWorkCycle() {
-      let browser = null;
-      
+    let browser = null;
+    try {
+      console.log('🔍 === ДИАГНОСТИКА executeWorkCycle ===');
+
       try {
-          console.log('🔍 === ДИАГНОСТИКА executeWorkCycle ===');
-          
-          // // ИСПРАВЛЕНИЕ: Используем старый BrowserManager если возможно
-          // console.log('🔍 Шаг 1: Инициализация браузера...');
-          // // // ДИАГНОСТИКА BROWSERMANAGER
-          // console.log('🔍 === ДИАГНОСТИКА BROWSERMANAGER ===');
-          // console.log('🔍 this.browserManager:', !!this.browserManager);
-          // console.log('🔍 this.browserManager.launch:', typeof this.browserManager?.launch);
-          // console.log('🔍 this.browserManager.loadSession:', typeof this.browserManager?.loadSession);
-          // console.log('🔍 this.browserManager.saveSession:', typeof this.browserManager?.saveSession);
-          // console.log('🔍 BrowserManager методы:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.browserManager || {})));
-          // console.log('🔍 Доступные методы BrowserManager:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.browserManager)));
-          
-          try {
-              // Пробуем старый способ через BrowserManager
-              await this.browserManager.init(); // ✅ ПРАВИЛЬНО
-              browser = this.browserManager.browser;
-              // this.page = await this.browserManager.getPage();
-              this.page = this.browserManager.page;
-              browser = this.browserManager.browser;
-              this.page = this.browserManager.page;
-              console.log('✅ Используем BrowserManager (старый способ)');
-              
-          } catch (error) {
-              console.log('⚠️ BrowserManager недоступен, используем прямую инициализацию');
-              
-              // Fallback к новому способу
-              const playwright = require('playwright');
-              browser = await playwright.chromium.launch({
-                  headless: process.env.HEADLESS === 'true' || process.env.NODE_ENV === 'production',
-                  args: process.env.NODE_ENV === 'production' ? [
-                      '--no-sandbox',
-                      '--disable-setuid-sandbox',
-                      '--disable-dev-shm-usage'
-                  ] : []
-              });
-              
-              this.page = await browser.newPage({
-                  viewport: { width: 1366, height: 768 },
-                  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-              });
-          }
-
-          if (!browser || !this.page) {
-              throw new Error('Не удалось инициализировать браузер');
-          }
-
-          console.log('🔍 Шаг 3: Авторизация...');
-          const loginSuccess = await this.login();
-          if (!loginSuccess) {
-              throw new Error('Не удалось авторизоваться');
-          }
-
-          console.log('🔍 Шаг 4: Поиск и комментирование поста...');
-          const commentSuccess = await this.findAndCommentPost();
-          if (!commentSuccess) {
-              throw new Error('Не удалось прокомментировать пост');
-          }
-
-          return true;
-
+        await this.browserManager.init();
+        browser = this.browserManager.browser;
+        this.page = this.browserManager.page;
+        console.log('✅ Используем BrowserManager (старый способ)');
       } catch (error) {
-          console.error(`❌ Ошибка в рабочем цикле: ${error.message}`);
-          return false;
-          
-      } finally {
-          // Закрываем браузер через BrowserManager если он использовался
-          if (this.browserManager.browser) {
-              try {
-                  await this.browserManager.close();
-                  console.log('🔚 BrowserManager закрыт');
-              } catch (error) {
-                  console.error('⚠️ Ошибка закрытия BrowserManager:', error.message);
-              }
-          } else if (browser) {
-              try {
-                  await browser.close();
-                  console.log('🔚 Браузер закрыт напрямую');
-              } catch (error) {
-                  console.error('⚠️ Ошибка закрытия браузера:', error.message);
-              }
-          }      // Если используем BrowserManager - не закрываем браузер здесь
+        console.log('⚠️ BrowserManager недоступен, используем прямую инициализацию');
+        const playwright = require('playwright');
+        browser = await playwright.chromium.launch({
+          headless: process.env.HEADLESS === 'true' || process.env.NODE_ENV === 'production',
+          args: process.env.NODE_ENV === 'production'
+            ? ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+            : []
+        });
+        this.page = await browser.newPage({
+          viewport: { width: 1366, height: 768 },
+          userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        });
       }
+
+      if (!browser || !this.page) {
+        throw new Error('Не удалось инициализировать браузер');
+      }
+
+      console.log('🔍 Шаг 3: Авторизация...');
+      const loginSuccess = await this.login();
+      if (!loginSuccess) {
+        throw new Error('Не удалось авторизоваться');
+      }
+
+      console.log('🔍 Шаг 4: Поиск и комментирование поста...');
+      const commentSuccess = await this.findAndCommentPost();
+      if (!commentSuccess) {
+        throw new Error('Не удалось прокомментировать пост');
+      }
+
+      return true;
+    } catch (error) {
+      console.error(`❌ Ошибка в рабочем цикле: ${error.message}`);
+      return false;
+    } finally {
+      if (this.browserManager.browser) {
+        try {
+          await this.browserManager.close();
+          console.log('🔚 BrowserManager закрыт');
+        } catch (error) {
+          console.error('⚠️ Ошибка закрытия BrowserManager:', error.message);
+        }
+      } else if (browser) {
+        try {
+          await browser.close();
+          console.log('🔚 Браузер закрыт напрямую');
+        } catch (error) {
+          console.error('⚠️ Ошибка закрытия браузера:', error.message);
+        }
+      }
+    }
   }
 
   /**

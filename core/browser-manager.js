@@ -19,38 +19,37 @@ class BrowserManager {
      * Инициализация браузера
      */
     async init() {
-        try {
-            // Запуск браузера
-            this.browser = await chromium.launch({
-                headless: this.config.browser.headless,
-                slowMo: this.config.browser.slowMo,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--no-first-run',
-                    '--disable-blink-features=AutomationControlled',
-                    '--disable-web-security'
-                ]
-            });
+    try {
+        this.browser = await chromium.launch({
+        headless: this.config.browser.headless,
+        slowMo: this.config.browser.slowMo,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--no-first-run',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-web-security'
+        ]
+        });
 
-            // Создание контекста
-            this.context = await this.browser.newContext({
-                userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                viewport: { width: 1280, height: 720 }
-            });
+        this.context = await this.browser.newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        viewport: { width: 1280, height: 720 },
+        locale: process.env.LOCALE || 'ru-RU',
+        timezoneId: process.env.TZ || 'Europe/Moscow'
+        });
 
-            // Создание страницы с анти-детекцией
-            this.page = await this.context.newPage();
-            await this.setupAntiDetection();
-            
-            logger.success('Браузер инициализирован');
-            return true;
-        } catch (error) {
-            logger.error('Ошибка инициализации браузера', { message: error.message });
-            return false;
-        }
+        this.page = await this.context.newPage();
+        await this.setupAntiDetection();
+        logger.success('Браузер инициализирован');
+        return true;
+    } catch (error) {
+        logger.error('Ошибка инициализации браузера', { message: error.message });
+        return false;
     }
+    }
+
 
     /**
      * Настройка анти-детекции
