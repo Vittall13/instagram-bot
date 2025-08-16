@@ -22,7 +22,10 @@ async function withTimeout(promise, ms, label) {
     clearTimeout(timerId);
   }
 }
-
+function shouldIdleCycle() {
+  const rate = Math.min(0.95, Math.max(0, parseFloat(process.env.IDLE_CYCLE_RATE || '0')));
+  return Math.random() < rate;
+}
 async function humanWiggle(page) {
   try {
     const moves = 3 + Math.floor(Math.random() * 4);                                // 3..6
@@ -43,6 +46,23 @@ async function humanWiggle(page) {
   }
 }
 // ===== end helpers =====
+
+// ===== Суточный отчёт: счётчики и функция отчёта =====
+let QUIET_SKIPS_TODAY = 0;
+let IDLE_SKIPS_TODAY = 0;
+let _LAST_REPORT_DAY = new Date().getDate();
+
+function maybeDailyReport() {
+  const now = new Date();
+  const day = now.getDate();
+  if (day !== _LAST_REPORT_DAY) {
+    logger.success(`Ежедневный отчёт — тихие окна: ${QUIET_SKIPS_TODAY}, пустые циклы: ${IDLE_SKIPS_TODAY}`);
+    QUIET_SKIPS_TODAY = 0;
+    IDLE_SKIPS_TODAY = 0;
+    _LAST_REPORT_DAY = day;
+  }
+}
+// ===== END уточный отчёт  =====
 
 // ===== human-like  =====
 async function readPostLikeHuman(page) {
@@ -156,29 +176,29 @@ class InstagramBot {
           const profileUrl = this.config.targetProfile || this.config.profile?.username;
           
           if (!profileUrl) {
-              console.error('❌ Конфигурация не найдена!');
-              console.error('📋 Проверьте файл config/config.json');
-              console.error('📋 Должно содержать: "targetProfile": "https://www.instagram.com/username/"');
+              logger.error('❌ Конфигурация не найдена!');
+              logger.error('Проверьте файл config/config.json');
+              logger.error('Должно содержать: "targetProfile": "https://www.instagram.com/username/"');
+
               throw new Error('Не указан профиль для мониторинга');
           }
-          
-          console.log(`🎯 Целевой профиль: ${profileUrl}`);
-          
+          logger.info(`🎯 Целевой профиль: ${profileUrl}`);
           // Загружаем рабочие часы
           const startHour = parseInt(process.env.WORKING_HOURS_START) || this.config.workingHours?.[0] || 9;
           const endHour = parseInt(process.env.WORKING_HOURS_END) || this.config.workingHours?.[1] || 18;
-          console.log(`⏰ Рабочие часы: ${startHour}:00 - ${endHour}:00`);
+          logger.info(`⏰ Рабочие часы: ${startHour}:00 - ${endHour}:00`);
           
           // Инициализация сервисов
           this.initializeServices();
           
-          console.log('✅ Инициализация завершена');
-          console.log('🚀 Бот готов к постоянной работе');
+          logger.success('Инициализация завершена');
+          logger.info('Бот готов к постоянной работе');
+
           
           return true;
           
       } catch (error) {
-          console.error('❌ Ошибка инициализации:', error.message);
+          logger.error('❌ Ошибка инициализации', { message: error.message });
           return false;
       }
   }
@@ -193,13 +213,12 @@ class InstagramBot {
 
   async login() {
     try {
-      console.log('🔍 === ДИАГНОСТИКА АВТОРИЗАЦИИ ===');
-      console.log('🔍 BrowserManager.loadSession:', typeof this.browserManager.loadSession);
-      console.log('🔍 BrowserManager.saveSession:', typeof this.browserManager.saveSession);
-
-      console.log('🔍 Попытка загрузки сессии...');
+      logger.analysis('🔍 === ДИАГНОСТИКА АВТОРИЗАЦИИ ===');
+      logger.analysis(`🔍 BrowserManager.loadSession: ${typeof this.browserManager.loadSession}`);
+      logger.analysis(`🔍 BrowserManager.saveSession: ${typeof this.browserManager.saveSession}`);
+      logger.info('🔍 Попытка загрузки сессии...');
       const sessionLoaded = await this.browserManager.loadSession();
-      console.log('🔍 Результат загрузки сессии:', sessionLoaded);
+      logger.info(`🔍 Результат загрузки сессии: ${sessionLoaded}`);
 
       logger.info('🔐 Переходим на Instagram...');
       await this.page.goto('https://www.instagram.com', {
@@ -215,10 +234,9 @@ class InstagramBot {
         logger.success('✅ Авторизация успешна!');
         return true;
       } catch {
-               console.log('⚠️ Сохраненная сессия недействительна');
+               logger.warning('⚠️ Сохраненная сессия недействительна');
                const hasEnvCredentials = process.env.INSTAGRAM_USERNAME && process.env.INSTAGRAM_PASSWORD;
-        console.log('🔍 Учетные данные в .env:', hasEnvCredentials ? 'найдены' : 'отсутствуют');
-
+        logger.info('🔍 Учетные данные в .env:', { present: hasEnvCredentials ? 'найдены' : 'отсутствуют' });
         logger.success('🔑 Требуется ручная авторизация...');
         logger.success('📝 Войдите в Instagram и нажмите Enter...');
         await new Promise((resolve) => {
@@ -511,12 +529,10 @@ class InstagramBot {
 
       logger.success('✅ Комментарий введён!');
 // ========== Конец блока ИНТЕГРИРОВАННАЯ ЛОГИКА ИЗ ОСНОВНОГО ПРОЕКТА ==========
-      await delays.waitForClickResponse(); // Ждём отклика
+      // ✅ Пытаемся найти кнопку «Опубликовать» с ретраями
+      logger.info('🔍 Ищем кнопку "Опубликовать" (до 3 попыток)...');
 
-      // ✅ Ищем кнопку "Опубликовать"
-      logger.info('🔍 Ищем кнопку "Опубликовать"...');
-      
-      const publishButtons = [
+      const publishSelectors = [
         'button[type="submit"]',
         'button[aria-label*="Post" i]',
         'button[aria-label*="Опубликовать" i]',
@@ -524,25 +540,35 @@ class InstagramBot {
         'button:has-text("Опубликовать")',
         '[role="button"][aria-label*="Post" i]'
       ];
-      
-      let publishButton = null;
-      for (const selector of publishButtons) {
-        try {
-          publishButton = await this.page.waitForSelector(selector, { timeout: 2000 });
-          if (publishButton) {
-            logger.info(`✅ Кнопка найдена: ${selector}`);
-            break;
+
+      let published = false;
+      for (let attempt = 1; attempt <= 3 && !published; attempt += 1) {
+        let publishButton = null;
+
+        for (const sel of publishSelectors) {
+          try {
+            publishButton = await this.page.waitForSelector(sel, { timeout: 1000 });
+            if (publishButton) {
+              logger.info(`✅ Кнопка найдена: ${sel} (попытка ${attempt})`);
+              await publishButton.click({ delay: 40 + Math.floor(Math.random() * 120) });
+              await delays.waitForClickResponse();
+              published = true;
+              break;
+            }
+          } catch {
+            // следующий селектор
           }
-        } catch {
-          continue;
+        }
+
+        if (!published) {
+          await this.page.waitForTimeout(300 + Math.floor(Math.random() * 600));
+          try {
+            await this.page.mouse.move(400 + Math.random() * 200, 300 + Math.random() * 200, { steps: 3 });
+          } catch {}
         }
       }
-      
-      if (publishButton) {
-        logger.info('📤 Кликаем по кнопке "Опубликовать"...');
-        await publishButton.click();
-        await delays.waitForClickResponse();
-      } else {
+
+      if (!published) {
         logger.info('📤 Кнопка не найдена, отправляем через Enter...');
         await this.page.keyboard.press('Enter');
         await delays.waitForClickResponse();
@@ -588,57 +614,69 @@ class InstagramBot {
       let cycleCount = 0;
       let successCount = 0;
       let errorCount = 0;
+      let consecutiveFailures = 0;
 
-      console.log('🚀 Запуск бота в режиме постоянной работы');
-      console.log('⏰ Интервал: 15-20 минут между комментариями');
-      
       while (true) {
           try {
               cycleCount++;
               
               // === ДОБАВИТЬ ДИАГНОСТИКУ ЗДЕСЬ ===
-              console.log(`\n🔍 [${new Date().toLocaleTimeString()}] === ДИАГНОСТИКА ЦИКЛА #${cycleCount} ===`);
+              logger.analysis(`=== ДИАГНОСТИКА ЦИКЛА #${cycleCount} ===`);
               
               // Проверка рабочего времени перед каждым циклом
-              console.log('🔍 Проверяем рабочее время...');
+              logger.info('🔍 Проверяем рабочее время...');
               if (!delays.isActiveTime()) {
-                  console.log(`😴 [${new Date().toLocaleTimeString()}] Вне рабочего времени. Пауза 30 минут`);
-                  await this.sleep(30 * 60 * 1000);
-                  continue;
-              }
+              logger.info('😴 Вне рабочего времени. Пауза 30 минут');
+              await this.sleep(30 * 60 * 1000);
+              continue;
+            }
 
-              console.log(`🔄 [${new Date().toLocaleTimeString()}] === ЦИКЛ #${cycleCount} ===`);
-              
+              const skipped = await delays.maybePauseForQuiet();
+              if (skipped) {
+                QUIET_SKIPS_TODAY += 1;
+                maybeDailyReport();
+                continue;
+              }
+              logger.info(`=== ЦИКЛ #${cycleCount} ===`);
+
               // Выполняем один цикл работы
-              console.log('🔍 Запускаем executeWorkCycle...');
+              logger.info('🔍 Запускаем executeWorkCycle...');
               const success = await this.executeWorkCycle();
               
-              if (success) {
-                  successCount++;
-                  console.log(`✅ [${new Date().toLocaleTimeString()}] Комментарий опубликован успешно`);
+            if (success) {
+                successCount++;
+                consecutiveFailures = 0;
               } else {
-                  errorCount++;
-                  console.log(`❌ [${new Date().toLocaleTimeString()}] Цикл завершился с ошибкой`);
+                errorCount++;
+                consecutiveFailures++;
+                logger.error(`❌ [${new Date().toLocaleTimeString()}] Цикл завершился с ошибкой`);
+              }
+
+              if (consecutiveFailures >= 2) {
+                const maxMin = parseInt(process.env.FAILURE_COOLDOWN_MAX_MINUTES || '240', 10);
+                const base = 30;
+                const extra = Math.min(maxMin, base * Math.pow(2, consecutiveFailures - 2));
+                logger.warning(`Серия ошибок: ${consecutiveFailures}. Доп. пауза ${extra} минут`);
+                await this.sleep(extra * 60 * 1000);
               }
 
               // Статистика
-              console.log(`📊 Статистика: ${successCount} успешных, ${errorCount} ошибок из ${cycleCount} циклов`);
+              logger.success(`📊 Статистика: ${successCount} успешных, ${errorCount} ошибок из ${cycleCount} циклов`);
 
               // Случайная пауза 15-20 минут
               const pauseMinutes = this.getRandomPause();
               const pauseMs = pauseMinutes * 60 * 1000;
               
-              console.log(`⏳ [${new Date().toLocaleTimeString()}] Пауза ${pauseMinutes} минут до следующего комментария`);
-              console.log(`🎯 Следующий запуск: ${new Date(Date.now() + pauseMs).toLocaleTimeString()}`);
+              logger.success(`⏳ Пауза ${pauseMinutes} минут до следующего комментария`);
+              logger.success(`🎯 Следующий запуск: ${new Date(Date.now() + pauseMs).toLocaleTimeString()}`);
               
               await this.sleep(pauseMs);
 
           } catch (error) {
               errorCount++;
-              console.error(`💥 [${new Date().toLocaleTimeString()}] Критическая ошибка в основном цикле:`, error.message);
-              
+              logger.error(`[${new Date().toLocaleTimeString()}] Критическая ошибка в основном цикле: ${error.message}`);
               // Пауза после ошибки перед повтором (5 минут)
-              console.log('⏳ Пауза 5 минут после ошибки...');
+              logger.info('⏳ Пауза 5 минут после ошибки...');
               await this.sleep(5 * 60 * 1000);
           }
       }
@@ -650,8 +688,7 @@ class InstagramBot {
   async executeWorkCycle() {
   let browser = null;
   try {
-    console.log('🔍 === ДИАГНОСТИКА executeWorkCycle ===');
-
+    logger.analysis('🔍 === ДИАГНОСТИКА executeWorkCycle ===');
     try {
       // Persistent через BrowserManager
       const ok = await this.browserManager.init();
@@ -659,18 +696,17 @@ class InstagramBot {
 
       this.page = this.browserManager.page;
       const ctx = this.browserManager.context;
-      console.log('ℹ️ Диагностика контекста:', {
+      logger.analysis('ℹ️ Диагностика контекста:', {
         page: !!this.page,
         context: !!ctx,
         pagesCount: ctx ? ctx.pages().length : 0
       });
-
-      // Лёгкая «прогулка»
+//
       await occasionalExploration(this.page);
 
-      console.log('✅ Используем BrowserManager (persistent)');
+      logger.success('✅ Используем BrowserManager (persistent)');
     } catch (e) {
-      console.log('⚠️ BrowserManager недоступен, используем прямую инициализацию:', e.message);
+      logger.warning(`⚠️ BrowserManager недоступен, используем прямую инициализацию: ${e.message}`);
       const playwright = require('playwright');
       browser = await playwright.chromium.launch({
         headless: process.env.HEADLESS === 'true' || process.env.NODE_ENV === 'production',
@@ -689,7 +725,7 @@ class InstagramBot {
       throw new Error('Не удалось инициализировать страницу браузера');
     }
 
-    console.log('🔍 Шаг 3: Авторизация...');
+    logger.info('🔍 Шаг 3: Авторизация...');
     const loginSuccess = await this.login();
     if (!loginSuccess) {
       throw new Error('Не удалось авторизоваться');
@@ -698,7 +734,7 @@ class InstagramBot {
     // После успешного входа можно ещё раз сделать короткую "эксплорацию"
     await occasionalExploration(this.page);
 
-    console.log('🔍 Шаг 4: Поиск и комментирование поста...');
+    logger.info('🔍 Шаг 4: Поиск и комментирование поста...');
     const commentSuccess = await this.findAndCommentPost();
     if (!commentSuccess) {
       throw new Error('Не удалось прокомментировать пост');
@@ -706,29 +742,28 @@ class InstagramBot {
 
     return true;
   } catch (error) {
-    console.error(`❌ Ошибка в рабочем цикле: ${error.message}`);
+    logger.error(`❌ Ошибка в рабочем цикле: ${error.message}`);
     return false;
   } finally {
     if (this.browserManager?.context) {
       try {
         await this.browserManager.close();
-        console.log('🔚 BrowserManager закрыт');
+        logger.info('🔚 BrowserManager закрыт');
       } catch (error) {
-        console.error('⚠️ Ошибка закрытия BrowserManager:', error.message);
+        logger.error('⚠️ Ошибка закрытия BrowserManager', { message: error?.message, stack: error?.stack });
       }
     } else if (browser) {
       try {
         await browser.close();
-        console.log('🔚 Браузер закрыт напрямую');
+        logger.info('🔚 Браузер закрыт напрямую');
       } catch (error) {
-        console.error('⚠️ Ошибка закрытия браузера:', error.message);
+        logger.error('⚠️ Ошибка закрытия браузера', { message: error?.message, stack: error?.stack });
       }
     }
   }
 }
 
-
-  /**
+  /*
    * ПЕРЕХОД К ПРОФИЛЮ
    */
   async navigateToProfile() {
@@ -745,25 +780,32 @@ class InstagramBot {
    */
   async findAndCommentPost() {
       try {
-          console.log('🔍 === ДИАГНОСТИКА findAndCommentPost ===');
-          
-          console.log('🔍 Вызываем findAndClickActualPost...');
+          logger.analysis('🔍 === ДИАГНОСТИКА findAndCommentPost ===');
+          logger.info('🔍 Вызываем findAndClickActualPost...');
           const success = await this.findAndClickActualPost();
           
-          console.log('🔍 Результат findAndClickActualPost:', success);
+          logger.info(`🔍 Результат findAndClickActualPost: ${success}`);
+          if (success && shouldIdleCycle()) {
+            logger.info('🕒 Пустой цикл по плану: читаем пост без публикации');
+            await this.page.waitForTimeout(2000 + Math.floor(Math.random() * 4000));
+            IDLE_SKIPS_TODAY += 1;
+            maybeDailyReport();
+            return true;
+          }
+          
           if (!success) {
               throw new Error('Не удалось найти и открыть пост');
           }
-          
-          console.log('🔍 Вызываем commentOnOpenPost...');
+
+          logger.info('🔍 Вызываем commentOnOpenPost...');
           const commentSuccess = await this.commentOnOpenPost();
           
-          console.log('🔍 Результат commentOnOpenPost:', commentSuccess);
+          logger.info(`🔍 Результат commentOnOpenPost: ${commentSuccess}`);
           return commentSuccess;
           
       } catch (error) {
-          console.error('❌ Ошибка поиска/комментирования поста:', error.message);
-          console.error('❌ Stack trace:', error.stack);
+          logger.error('❌ Ошибка поиска/комментирования поста:', { message: error.message });
+          logger.error('❌ Stack trace:', { stack: error.stack });
           return false;
       }
   }
@@ -778,7 +820,7 @@ class InstagramBot {
       
       // Валидация значений
       if (minMinutes >= maxMinutes) {
-          console.log(' Некорректные настройки интервала в .env, используем значения по умолчанию');
+          logger.warning('Некорректные настройки интервала в .env, используем значения по умолчанию');
           return 17.5; // Среднее значение по умолчанию
       }
       
@@ -790,7 +832,7 @@ class InstagramBot {
       // Округляем до десятых и ограничиваем разумными пределами
       const result = Math.max(5, Math.min(60, Math.round(finalMinutes * 10) / 10));
       
-      console.log(` Интервал из .env: ${minMinutes}-${maxMinutes} мин → выбрано: ${result} мин`);
+      logger.info(` Интервал из .env: ${minMinutes}-${maxMinutes} мин → выбрано: ${result} мин`);
       return result;
   }
 
@@ -802,17 +844,16 @@ class InstagramBot {
           const timeout = setTimeout(resolve, ms);
           
           // Возможность прервать сон по сигналу (для graceful shutdown)
-          process.once('SIGINT', () => {
-              clearTimeout(timeout);
-              console.log('\n🛑 Получен сигнал остановки');
-              process.exit(0);
-          });
-          
-          process.once('SIGTERM', () => {
-              clearTimeout(timeout);
-              console.log('\n🛑 Получен сигнал завершения');
-              process.exit(0);
-          });
+          process.on('SIGINT', () => {
+            logger.warning('\n🛑 Получен сигнал остановки (Ctrl+C)');
+            logger.info('🔄 Завершение текущих операций...');
+            process.exit(0);
+        });
+        
+        process.on('SIGTERM', () => {
+            logger.warning('\n🛑 Получен сигнал завершения');
+            process.exit(0);
+        });
       });
   }
 }
@@ -825,20 +866,20 @@ async function startBot() {
     
     // Обработка сигналов остановки
     process.on('SIGINT', () => {
-        console.log('\n🛑 Получен сигнал остановки (Ctrl+C)');
-        console.log('🔄 Завершение текущих операций...');
+        logger.warning('\n🛑 Получен сигнал остановки (Ctrl+C)');
+        logger.info('🔄 Завершение текущих операций...');
         process.exit(0);
     });
     
     process.on('SIGTERM', () => {
-        console.log('\n🛑 Получен сигнал завершения');
+        logger.warning('\n🛑 Получен сигнал завершения');
         process.exit(0);
     });
 
     // Инициализация
     const initSuccess = await bot.init();
     if (!initSuccess) {
-        console.error('❌ Не удалось инициализировать бота');
+        logger.error('❌ Не удалось инициализировать бота');
         process.exit(1);
     }
 
@@ -849,7 +890,7 @@ async function startBot() {
 // Запускаем бота
 if (require.main === module) {
     startBot().catch(error => {
-        console.error('💥 Фатальная ошибка:', error);
+        logger.error('💥 Фатальная ошибка:', { error });
         process.exit(1);
     });
 }
