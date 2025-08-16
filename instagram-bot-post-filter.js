@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { chromium } = require('playwright');
 const fs = require('fs').promises;
 const config = require('./config/config.js');
@@ -42,6 +43,98 @@ async function humanWiggle(page) {
   }
 }
 // ===== end helpers =====
+
+// ===== human-like  =====
+async function readPostLikeHuman(page) {
+  // 60–70% случаев применяем «чтение» поста
+  if (Math.random() > 0.7) return;
+
+  try {
+    // 1) Небольшая пауза перед действиями — как будто читаем подпись
+    await page.waitForTimeout(1200 + Math.floor(Math.random() * 4000)); // 1.2–5.2s
+
+    // 2) Нажать «ещё» в подписи, если есть
+    const moreSelectors = [
+      'button:has-text("ещё")',
+      'button:has-text("more")',
+      '[role="button"]:has-text("ещё")',
+      '[role="button"]:has-text("more")'
+    ];
+    for (const sel of moreSelectors) {
+      const btn = await page.$(sel);
+      if (btn) {
+        await btn.click({ delay: 60 + Math.floor(Math.random() * 140) });
+        await page.waitForTimeout(400 + Math.floor(Math.random() * 800));
+        break;
+      }
+    }
+
+    // 3) Небольшой скролл блока комментариев (в модалке или на странице поста)
+    // Пробуем прокрутить основную область
+    await page.evaluate(() => {
+      const modal = document.querySelector('div[role="dialog"], div[aria-modal="true"]');
+      const container = modal || document.scrollingElement || document.body;
+      container.scrollBy(0, Math.floor(window.innerHeight * 0.6));
+    });
+    await page.waitForTimeout(400 + Math.floor(Math.random() * 900));
+
+    // 4) Несколько легких движений мыши
+    const moves = 2 + Math.floor(Math.random() * 3); // 2..4
+    for (let i = 0; i < moves; i += 1) {
+      await page.mouse.move(
+        200 + Math.floor(Math.random() * 800),
+        200 + Math.floor(Math.random() * 500),
+        { steps: 3 + Math.floor(Math.random() * 4) }
+      );
+      await page.waitForTimeout(80 + Math.floor(Math.random() * 240));
+    }
+  } catch (_) {
+    // не критично
+  }
+}
+
+async function occasionalExploration(page) {
+  // 20–30% случаев делаем «прогулку» по интерфейсу
+  if (Math.random() > 0.3) return;
+
+  try {
+    // 1) Открыть домашнюю ленту
+    await page.goto('https://www.instagram.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(800 + Math.floor(Math.random() * 1400));
+
+    // 2) Пролистать ленту на 1–2 экрана
+    const times = 1 + Math.floor(Math.random() * 2); // 1..2
+    for (let i = 0; i < times; i += 1) {
+      await page.evaluate(() => window.scrollBy(0, Math.floor(window.innerHeight * 0.9)));
+      await page.waitForTimeout(600 + Math.floor(Math.random() * 1200));
+    }
+
+    // 3) Иногда открыть первый видимый пост
+    if (Math.random() < 0.5) {
+      const post = await page.$('article a, a[href*="/p/"], a[href*="/reel/"]');
+      if (post) {
+        await post.click({ delay: 60 + Math.floor(Math.random() * 140) });
+        await page.waitForTimeout(800 + Math.floor(Math.random() * 1600));
+
+        // 4) Коротко «почитать» и закрыть модалку/вернуться
+        await page.waitForTimeout(1000 + Math.floor(Math.random() * 2500));
+        // Закрыть модалку, если появилась
+        const closeBtn = await page.$('svg[aria-label="Close"], [aria-label="Close"], button:has-text("Close")');
+        if (closeBtn) {
+          await closeBtn.click({ delay: 60 + Math.floor(Math.random() * 140) });
+          await page.waitForTimeout(400 + Math.floor(Math.random() * 900));
+        } else {
+          // Иначе — вернуться назад
+          await page.goBack({ waitUntil: 'domcontentloaded' });
+          await page.waitForTimeout(400 + Math.floor(Math.random() * 900));
+        }
+      }
+    }
+  } catch (_) {
+    // не критично
+  }
+}
+// ===== end human-like  =====
 
 class InstagramBot {
     constructor() {
@@ -184,6 +277,8 @@ class InstagramBot {
 
           if (postOpened.hasModal || postOpened.hasPostUrl) {
             logger.success('✅ Пост успешно открыт!');
+            // «почитать» пост перед комментом
+            await readPostLikeHuman(this.page);
             return true;
           }
         }
@@ -553,68 +648,85 @@ class InstagramBot {
    * ВЫПОЛНЕНИЕ ОДНОГО РАБОЧЕГО ЦИКЛА
    */
   async executeWorkCycle() {
-    let browser = null;
+  let browser = null;
+  try {
+    console.log('🔍 === ДИАГНОСТИКА executeWorkCycle ===');
+
     try {
-      console.log('🔍 === ДИАГНОСТИКА executeWorkCycle ===');
+      // Persistent через BrowserManager
+      const ok = await this.browserManager.init();
+      if (!ok) throw new Error('BrowserManager.init() вернул false');
 
+      this.page = this.browserManager.page;
+      const ctx = this.browserManager.context;
+      console.log('ℹ️ Диагностика контекста:', {
+        page: !!this.page,
+        context: !!ctx,
+        pagesCount: ctx ? ctx.pages().length : 0
+      });
+
+      // Лёгкая «прогулка»
+      await occasionalExploration(this.page);
+
+      console.log('✅ Используем BrowserManager (persistent)');
+    } catch (e) {
+      console.log('⚠️ BrowserManager недоступен, используем прямую инициализацию:', e.message);
+      const playwright = require('playwright');
+      browser = await playwright.chromium.launch({
+        headless: process.env.HEADLESS === 'true' || process.env.NODE_ENV === 'production',
+        args: process.env.NODE_ENV === 'production'
+          ? ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+          : []
+      });
+      this.page = await browser.newPage({
+        viewport: { width: 1366, height: 768 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      });
+    }
+
+    // КРИТИЧЕСКАЯ проверка — только страница
+    if (!this.page) {
+      throw new Error('Не удалось инициализировать страницу браузера');
+    }
+
+    console.log('🔍 Шаг 3: Авторизация...');
+    const loginSuccess = await this.login();
+    if (!loginSuccess) {
+      throw new Error('Не удалось авторизоваться');
+    }
+
+    // После успешного входа можно ещё раз сделать короткую "эксплорацию"
+    await occasionalExploration(this.page);
+
+    console.log('🔍 Шаг 4: Поиск и комментирование поста...');
+    const commentSuccess = await this.findAndCommentPost();
+    if (!commentSuccess) {
+      throw new Error('Не удалось прокомментировать пост');
+    }
+
+    return true;
+  } catch (error) {
+    console.error(`❌ Ошибка в рабочем цикле: ${error.message}`);
+    return false;
+  } finally {
+    if (this.browserManager?.context) {
       try {
-        await this.browserManager.init();
-        browser = this.browserManager.browser;
-        this.page = this.browserManager.page;
-        console.log('✅ Используем BrowserManager (старый способ)');
+        await this.browserManager.close();
+        console.log('🔚 BrowserManager закрыт');
       } catch (error) {
-        console.log('⚠️ BrowserManager недоступен, используем прямую инициализацию');
-        const playwright = require('playwright');
-        browser = await playwright.chromium.launch({
-          headless: process.env.HEADLESS === 'true' || process.env.NODE_ENV === 'production',
-          args: process.env.NODE_ENV === 'production'
-            ? ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-            : []
-        });
-        this.page = await browser.newPage({
-          viewport: { width: 1366, height: 768 },
-          userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        });
+        console.error('⚠️ Ошибка закрытия BrowserManager:', error.message);
       }
-
-      if (!browser || !this.page) {
-        throw new Error('Не удалось инициализировать браузер');
-      }
-
-      console.log('🔍 Шаг 3: Авторизация...');
-      const loginSuccess = await this.login();
-      if (!loginSuccess) {
-        throw new Error('Не удалось авторизоваться');
-      }
-
-      console.log('🔍 Шаг 4: Поиск и комментирование поста...');
-      const commentSuccess = await this.findAndCommentPost();
-      if (!commentSuccess) {
-        throw new Error('Не удалось прокомментировать пост');
-      }
-
-      return true;
-    } catch (error) {
-      console.error(`❌ Ошибка в рабочем цикле: ${error.message}`);
-      return false;
-    } finally {
-      if (this.browserManager.browser) {
-        try {
-          await this.browserManager.close();
-          console.log('🔚 BrowserManager закрыт');
-        } catch (error) {
-          console.error('⚠️ Ошибка закрытия BrowserManager:', error.message);
-        }
-      } else if (browser) {
-        try {
-          await browser.close();
-          console.log('🔚 Браузер закрыт напрямую');
-        } catch (error) {
-          console.error('⚠️ Ошибка закрытия браузера:', error.message);
-        }
+    } else if (browser) {
+      try {
+        await browser.close();
+        console.log('🔚 Браузер закрыт напрямую');
+      } catch (error) {
+        console.error('⚠️ Ошибка закрытия браузера:', error.message);
       }
     }
   }
+}
+
 
   /**
    * ПЕРЕХОД К ПРОФИЛЮ
